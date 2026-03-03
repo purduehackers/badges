@@ -5,6 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { BadgeModel } from "./badge-model";
 import { parseBadgeSVG, type BadgeData } from "@/lib/svg";
+import type { AcrylicMaterial } from "@/lib/materials";
 
 const LOADING_PLACEHOLDER = (
   <mesh>
@@ -13,7 +14,7 @@ const LOADING_PLACEHOLDER = (
   </mesh>
 );
 
-export function BadgeScene({ svgUrl }: { svgUrl: string }) {
+export function BadgeScene({ svgUrl, material }: { svgUrl: string; material: AcrylicMaterial }) {
   const [data, setData] = useState<BadgeData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +59,13 @@ export function BadgeScene({ svgUrl }: { svgUrl: string }) {
       <pointLight position={[0, 0, 8]} intensity={0.5} />
       <Environment preset="studio" />
 
-      {data ? <BadgeModel data={data} /> : LOADING_PLACEHOLDER}
+      {/* Backdrop plane behind the badge for depth and contrast */}
+      <mesh position={[0, 0, -1]} receiveShadow>
+        <planeGeometry args={[8, 8]} />
+        <meshStandardMaterial color="#999" roughness={0.9} />
+      </mesh>
+
+      {data ? <BadgeModel key={material.id} data={data} material={material} /> : LOADING_PLACEHOLDER}
 
       <OrbitControls enableDamping dampingFactor={0.1} minDistance={2} maxDistance={15} />
     </Canvas>

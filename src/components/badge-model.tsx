@@ -4,12 +4,14 @@ import { useMemo } from "react";
 import { CanvasTexture, DoubleSide, ExtrudeGeometry, ShapeGeometry, SRGBColorSpace } from "three";
 import type { BadgeData } from "@/lib/svg";
 import { applyKerf, KERF_MM } from "@/lib/kerf";
+import { MATERIAL_TYPE_CONFIGS, type AcrylicMaterial } from "@/lib/materials";
+import { getTextureGenerator } from "@/lib/texture-generators";
 
 // Units are inches
 const BADGE_HEIGHT = 2.5;
 const BODY_DEPTH = 0.125; // 1/8 inch
 
-export function BadgeModel({ data }: { data: BadgeData }) {
+export function BadgeModel({ data, material }: { data: BadgeData; material: AcrylicMaterial }) {
   const { bodyGeometry, engraveGeometry, engraveTexture } = useMemo(() => {
     const { bodyShapes, engraveCanvas, viewBox } = data;
 
@@ -30,6 +32,14 @@ export function BadgeModel({ data }: { data: BadgeData }) {
       bevelSize: bevelSvg,
       bevelSegments: 2,
     });
+    // Normalize body UVs to [0,1] so procedural textures map correctly.
+    // ExtrudeGeometry UVs are in SVG coordinate space; remap using the viewBox.
+    const bodyUv = bodyGeo.getAttribute("uv");
+    for (let i = 0; i < bodyUv.count; i++) {
+      bodyUv.setXY(i, bodyUv.getX(i) / viewBox.width, 1 - bodyUv.getY(i) / viewBox.height);
+    }
+    bodyUv.needsUpdate = true;
+
     bodyGeo.scale(scale, -scale, scale);
     bodyGeo.computeBoundingBox();
 
@@ -70,28 +80,44 @@ export function BadgeModel({ data }: { data: BadgeData }) {
     };
   }, [data]);
 
+  const generateTexture = getTextureGenerator(material.type);
+
+  const textureMaps = useMemo(() => {
+    if (!generateTexture) return null;
+    const { color, roughness } = generateTexture(material.color);
+    const colorTex = new CanvasTexture(color);
+    colorTex.colorSpace = SRGBColorSpace;
+    colorTex.needsUpdate = true;
+    const roughTex = new CanvasTexture(roughness);
+    roughTex.needsUpdate = true;
+    return { colorMap: colorTex, roughnessMap: roughTex };
+  }, [material.color, generateTexture]);
+
+  const { physical } = MATERIAL_TYPE_CONFIGS[material.type];
+
   return (
     <group>
       <mesh geometry={bodyGeometry} castShadow receiveShadow>
         <meshPhysicalMaterial
-          color="#c0a050"
-          metalness={0.05}
-          roughness={0.05}
-          clearcoat={1}
-          clearcoatRoughness={0.05}
-          reflectivity={0.9}
+          key={material.id}
+          color={textureMaps ? "#ffffff" : material.color}
+          map={textureMaps?.colorMap}
+          metalness={0}
+          roughnessMap={textureMaps?.roughnessMap}
           side={DoubleSide}
+          {...physical}
         />
       </mesh>
 
       <mesh geometry={engraveGeometry}>
         <meshPhysicalMaterial
-          color="#d4b870"
+          color={material.engraveColor}
           metalness={0}
-          roughness={0.9}
+          roughness={0.85}
           clearcoat={0}
           alphaMap={engraveTexture}
           transparent
+          opacity={0.75}
           depthWrite={false}
           side={DoubleSide}
         />
