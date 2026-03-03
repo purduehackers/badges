@@ -19,14 +19,21 @@ export function BadgeScene({ svgUrl, material }: { svgUrl: string; material: Acr
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let stale = false;
     setData(null);
     setError(null);
     parseBadgeSVG(svgUrl)
-      .then(setData)
+      .then((d) => {
+        if (!stale) setData(d);
+      })
       .catch((e) => {
+        if (stale) return;
         console.error("Failed to parse badge SVG:", e);
         setError(e instanceof Error ? e.message : String(e));
       });
+    return () => {
+      stale = true;
+    };
   }, [svgUrl]);
 
   if (error) {
@@ -65,7 +72,11 @@ export function BadgeScene({ svgUrl, material }: { svgUrl: string; material: Acr
         <meshStandardMaterial color="#999" roughness={0.9} />
       </mesh>
 
-      {data ? <BadgeModel key={material.id} data={data} material={material} /> : LOADING_PLACEHOLDER}
+      {data ? (
+        <BadgeModel key={material.id} data={data} material={material} />
+      ) : (
+        LOADING_PLACEHOLDER
+      )}
 
       <OrbitControls enableDamping dampingFactor={0.1} minDistance={2} maxDistance={15} />
     </Canvas>

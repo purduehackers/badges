@@ -66,12 +66,6 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
-function hash(x: number, y: number): number {
-  let h = x * 374761393 + y * 668265263;
-  h = (h ^ (h >> 13)) * 1274126177;
-  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
-}
-
 function generatePearlescentTexture(hexColor: string): GeneratedTextures {
   const colorCanvas = document.createElement("canvas");
   colorCanvas.width = SIZE;
@@ -87,8 +81,7 @@ function generatePearlescentTexture(hexColor: string): GeneratedTextures {
   const roughData = roughCtx.createImageData(SIZE, SIZE);
   const roughPx = roughData.data;
 
-  const [baseR, baseG, baseB] = hexToRgb(hexColor);
-  const [baseH, baseS, baseL] = rgbToHsl(baseR, baseG, baseB);
+  const [baseH, baseS, baseL] = rgbToHsl(...hexToRgb(hexColor));
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
@@ -103,9 +96,9 @@ function generatePearlescentTexture(hexColor: string): GeneratedTextures {
       // Dominant horizontal bands with slight diagonal lean
       let stripe = 0;
       stripe += 0.45 * Math.sin(wy * 18.0 + wx * 1.5 + 0.8);
-      stripe += 0.30 * Math.sin(wy * 35.0 - wx * 2.0 + 2.5);
+      stripe += 0.3 * Math.sin(wy * 35.0 - wx * 2.0 + 2.5);
       stripe += 0.15 * Math.sin(wy * 60.0 + wx * 3.0 + 4.1);
-      stripe += 0.10 * Math.sin(wy * 90.0 - wx * 1.0 + 1.0);
+      stripe += 0.1 * Math.sin(wy * 90.0 - wx * 1.0 + 1.0);
 
       // Normalize to [0, 1]
       const t = stripe * 0.5 + 0.5;
@@ -128,7 +121,7 @@ function generatePearlescentTexture(hexColor: string): GeneratedTextures {
       colorPx[idx + 3] = 255;
 
       // Roughness map: stripe peaks are shinier, valleys are matte
-      const roughVal = Math.round((0.50 - t * 0.30) * 255);
+      const roughVal = Math.round((0.5 - t * 0.3) * 255);
       roughPx[idx] = roughVal;
       roughPx[idx + 1] = roughVal;
       roughPx[idx + 2] = roughVal;

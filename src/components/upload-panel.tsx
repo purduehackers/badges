@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 
 interface UploadPanelProps {
@@ -79,9 +78,8 @@ export function UploadPanel({ svgUrl, onSvgChange }: UploadPanelProps) {
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-label="Upload SVG file"
         onDrop={handleDrop}
         onDragOver={(e) => {
@@ -93,12 +91,6 @@ export function UploadPanel({ svgUrl, onSvgChange }: UploadPanelProps) {
           setIsDragging(false);
         }}
         onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            fileInputRef.current?.click();
-          }
-        }}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 transition-colors ${
           isDragging
             ? "border-amber-400 bg-amber-400/10"
@@ -120,8 +112,7 @@ export function UploadPanel({ svgUrl, onSvgChange }: UploadPanelProps) {
           />
         </svg>
         <p className="text-sm text-neutral-300">
-          Drop an SVG here or{" "}
-          <span className="text-amber-400 underline">browse</span>
+          Drop an SVG here or <span className="text-amber-400 underline">browse</span>
         </p>
         <input
           ref={fileInputRef}
@@ -133,10 +124,11 @@ export function UploadPanel({ svgUrl, onSvgChange }: UploadPanelProps) {
             if (file) handleFile(file);
           }}
         />
-      </div>
+      </button>
 
       <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-neutral-800/50 p-4">
         {previewUrl ? (
+          /* eslint-disable-next-line nextjs/no-img-element -- blob URL from createObjectURL, not optimizable by next/image */
           <img
             src={previewUrl}
             alt="Badge SVG preview"
