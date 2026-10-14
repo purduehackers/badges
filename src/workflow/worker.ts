@@ -20,7 +20,7 @@ import type { BadgeStore } from "./store.ts";
 import { inspectSvg, renderSvg } from "./svg.ts";
 
 export interface Publisher {
-  archive(review: Review): Promise<NonNullable<Review["pr"]>>;
+  archive(review: Review): Promise<NonNullable<Review["pr"] | Review["publication"]>>;
   publish(
     review: Review,
     beforeMerge: () => Promise<void>,
@@ -72,7 +72,9 @@ export function createWorker(
         assertApproval(review);
         await assertCurrentEvent(review, cms);
         await inventory?.reserve(review);
-        const pr = await publisher.archive(review);
+        const archived = await publisher.archive(review);
+        if ("commit" in archived) return { ...review, publication: archived };
+        const pr = archived;
         return {
           ...review,
           pr,
@@ -87,9 +89,12 @@ export function createWorker(
       }
       case "publish": {
         assertApproval(review);
-        if (!review.pr || review.approval?.head !== review.pr.head)
+        if (review.publication) await assertCurrentEvent(review, cms);
+        else if (!review.pr || review.approval?.head !== review.pr.head)
           throw new Error("Publication approval does not match this revision.");
-        const publication = await publisher.publish(review, () => assertCurrentEvent(review, cms));
+        const publication =
+          review.publication ??
+          (await publisher.publish(review, () => assertCurrentEvent(review, cms)));
         const published = { ...review, publication };
         await inventory?.consume(published);
         return published;

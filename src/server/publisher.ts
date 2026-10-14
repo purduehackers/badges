@@ -85,14 +85,44 @@ class GithubPublisher implements Publisher {
     const base = repo.default_branch;
     const baseRef = (await github.rest.git.getRef({ ...repository, ref: `heads/${base}` })).data
       .object.sha;
+    await assertEventIdentity(github, review, baseRef);
+    const baseCommit = (await github.rest.git.getCommit({ ...repository, commit_sha: baseRef }))
+      .data;
+    const entries = await Promise.all(
+      [...content].map(async ([name, bytes]) => ({
+        path: `${prefix}/${name}`,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: (
+          await github.rest.git.createBlob({
+            ...repository,
+            content: Buffer.from(bytes).toString("base64"),
+            encoding: "base64",
+          })
+        ).data.sha,
+      })),
+    );
+    const baseTree = await github.rest.git.createTree({
+      ...repository,
+      base_tree: baseCommit.tree.sha,
+      tree: entries,
+    });
+    if (baseTree.data.sha === baseCommit.tree.sha) {
+      await verifyFiles(github, prefix, baseRef, content);
+      return {
+        commit: baseRef,
+        url: `https://github.com/${repository.owner}/${repository.repo}/tree/${repoDefault(base)}/${prefix}`,
+      };
+    }
     const references = (
       await github.rest.git.listMatchingRefs({ ...repository, ref: `heads/${branch}` })
     ).data;
     const previous = references.find((ref) => ref.ref === `refs/heads/${branch}`)?.object.sha;
     const parent = previous ?? baseRef;
-    await assertEventIdentity(github, review, baseRef);
-    const parentCommit = (await github.rest.git.getCommit({ ...repository, commit_sha: parent }))
-      .data;
+    const parentCommit =
+      parent === baseRef
+        ? baseCommit
+        : (await github.rest.git.getCommit({ ...repository, commit_sha: parent })).data;
     const marker = `Badge review ${review.id}`;
     if (
       previous &&
@@ -102,24 +132,14 @@ class GithubPublisher implements Publisher {
       throw new Error(
         "The review branch was edited outside wack hacker. Reattach the revised SVGs in a new review thread so they are checked again.",
       );
-    const tree = await github.rest.git.createTree({
-      ...repository,
-      base_tree: parentCommit.tree.sha,
-      tree: await Promise.all(
-        [...content].map(async ([name, bytes]) => ({
-          path: `${prefix}/${name}`,
-          mode: "100644" as const,
-          type: "blob" as const,
-          sha: (
-            await github.rest.git.createBlob({
-              ...repository,
-              content: Buffer.from(bytes).toString("base64"),
-              encoding: "base64",
-            })
-          ).data.sha,
-        })),
-      ),
-    });
+    const tree =
+      parent === baseRef
+        ? baseTree
+        : await github.rest.git.createTree({
+            ...repository,
+            base_tree: parentCommit.tree.sha,
+            tree: entries,
+          });
     const commit =
       tree.data.sha === parentCommit.tree.sha
         ? parent
