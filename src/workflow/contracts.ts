@@ -9,6 +9,23 @@ export const BADGES_CHANNEL_ID = z
 export const RUBRIC_VERSION = "2026-10-12.1";
 export const MAX_SVG_BYTES = 1_000_000;
 export const MAX_BADGE_COUNT = 500;
+export const MAX_CUTTING_SHEETS = 10;
+export const sheetSizeSchema = z.strictObject({
+  widthIn: z.number().min(0.25).max(120),
+  heightIn: z.number().min(0.25).max(120),
+});
+export const sheetBatchSchema = z
+  .array(sheetSizeSchema.extend({ quantity: z.int().min(1).max(MAX_CUTTING_SHEETS) }))
+  .min(1)
+  .max(MAX_CUTTING_SHEETS)
+  .refine(
+    (sheets) => sheets.reduce((sum, sheet) => sum + sheet.quantity, 0) <= MAX_CUTTING_SHEETS,
+    {
+      message: `Choose up to ${MAX_CUTTING_SHEETS} sheets per batch.`,
+    },
+  );
+export type SheetSize = z.output<typeof sheetSizeSchema>;
+export type SheetBatch = z.output<typeof sheetBatchSchema>;
 export const targetCountSchema = z.int().min(1).max(MAX_BADGE_COUNT);
 const id = z.string().trim().min(1).max(128);
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -43,22 +60,42 @@ export const checkSchema = z.strictObject({
   evidenceId: digestSchema,
 });
 export const placementSchema = z.strictObject({
-  sheet: z.int().min(0).max(1),
+  sheet: z
+    .int()
+    .min(0)
+    .max(MAX_CUTTING_SHEETS - 1),
   x: z.number(),
   y: z.number(),
   angle: z.number(),
 });
-export const layoutSchema = z.strictObject({
-  id: digestSchema,
-  count: targetCountSchema,
-  sizeIn: z.number().positive(),
-  widthIn: z.number().positive(),
-  heightIn: z.number().positive(),
-  placements: z.array(placementSchema).min(1).max(MAX_BADGE_COUNT),
-  sheets: z.array(digestSchema).length(2),
-  preview: digestSchema,
-  audited: z.literal(true),
-});
+export const layoutSchema = z
+  .strictObject({
+    id: digestSchema,
+    count: targetCountSchema,
+    sizeIn: z.number().positive(),
+    widthIn: z.number().positive(),
+    heightIn: z.number().positive(),
+    placements: z.array(placementSchema).min(1).max(MAX_BADGE_COUNT),
+    sheets: z.array(digestSchema).min(1).max(MAX_CUTTING_SHEETS),
+    // Existing stored layouts used this fixed pair, in landscape orientation.
+    sheetSizes: z
+      .array(sheetSizeSchema)
+      .min(1)
+      .max(MAX_CUTTING_SHEETS)
+      .default([
+        { widthIn: 12, heightIn: 12 },
+        { widthIn: 18, heightIn: 12 },
+      ]),
+    preview: digestSchema,
+    audited: z.literal(true),
+  })
+  .refine(
+    (layout) =>
+      layout.count === layout.placements.length &&
+      layout.sheets.length === layout.sheetSizes.length &&
+      layout.placements.every((placement) => placement.sheet < layout.sheetSizes.length),
+    { message: "The layout does not match its cutting sheets." },
+  );
 export const decisionSchema = z.strictObject({
   criterion: criterionSchema,
   context: digestSchema,
@@ -76,11 +113,12 @@ export const stockPlanSchema = z
       widthIn: z.number().positive(),
       heightIn: z.number().positive(),
       thicknessMm: z.number().positive(),
-      quantity: z.literal(1),
+      quantity: z.int().min(1).max(MAX_CUTTING_SHEETS),
     }),
   )
   .min(1)
-  .max(2);
+  .max(MAX_CUTTING_SHEETS)
+  .refine((plan) => new Set(plan.map((sheet) => sheet.itemId)).size === plan.length);
 export type StockPlan = z.output<typeof stockPlanSchema>;
 
 export const reviewSchema = z.strictObject({
@@ -99,6 +137,7 @@ export const reviewSchema = z.strictObject({
   event: eventSchema.optional(),
   settings: settingsSchema.optional(),
   material: badgeMaterialSchema.optional(),
+  sheetBatch: sheetBatchSchema.optional(),
   checks: z.array(checkSchema),
   previews: z.array(digestSchema),
   layouts: z.array(layoutSchema).max(3),
@@ -180,6 +219,7 @@ export function contextHash(review: Review): string {
       fittedSizeIn: review.fittedSizeIn,
       targetCount: review.targetCount,
       material: review.material,
+      sheetBatch: review.sheetBatch,
       layout: review.selectedLayout,
       stockPlan: review.stockPlan,
       manufacturing: review.manufacturing,

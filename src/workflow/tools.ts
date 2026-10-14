@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { digestSchema, targetCountSchema } from "./contracts.ts";
+import { digestSchema, targetCountSchema, sheetBatchSchema } from "./contracts.ts";
 import { inventoryActionSchema } from "./inventory-contracts.ts";
 
 const current = { version: z.int().nonnegative() };
@@ -43,12 +43,18 @@ export const badgeTools = {
     description: "Set the manufacturer's requested quantity and calculate cutting sheets.",
     schema: z.strictObject({ ...current, count: targetCountSchema }),
   },
+  set_sheets: {
+    description:
+      "Choose the manufacturer's sheet sizes and quantities for this batch, such as two 12 by 12-inch sheets. Checks stock and recalculates an existing target without repeating design QA.",
+    schema: z.strictObject({ ...current, sheets: sheetBatchSchema }),
+  },
   preview_packing: {
     description:
       "Calculate capacity at a proposed size without changing the review. Use for what-if questions such as how many badges fit at 3 inches. Results are feasible layouts, not proven optima.",
     schema: z.strictObject({
       sizeIn: z.number().min(1.8).max(10),
       count: targetCountSchema.optional(),
+      sheets: sheetBatchSchema.optional(),
     }),
   },
   select_packing: {

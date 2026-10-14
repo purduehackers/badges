@@ -1,9 +1,11 @@
 import { Resvg } from "@resvg/resvg-js";
+import { join } from "node:path";
 import { XMLSerializer } from "@xmldom/xmldom";
 import type { Path } from "clipper-lib";
 
 import { hash, MAX_BADGE_COUNT } from "./contracts.ts";
-import type { Layout, Settings } from "./contracts.ts";
+import type { Layout, Settings, SheetSize } from "./contracts.ts";
+import { sheetLabel } from "./sheets.ts";
 import {
   bounds,
   assertSimple,
@@ -15,7 +17,6 @@ import {
   offset,
   rotate,
   SCALE,
-  SHEETS,
   toPath,
   translate,
 } from "./geometry.ts";
@@ -65,7 +66,13 @@ function shapeAt(cut: string, sizeIn: number): Shape {
   return { points, searchPoints, center, scale, widthIn, heightIn };
 }
 
-function nest(points: Point[], gap: number, deadline: number, attempt: number): Placement[] {
+function nest(
+  points: Point[],
+  sheets: SheetSize[],
+  gap: number,
+  deadline: number,
+  attempt: number,
+): Placement[] {
   const padded = offset(points, gap / 2 + 0.14);
   // Pick an orientation suited to long shapes, then allow quarter turns and flips.
   const baseAngle =
@@ -88,7 +95,8 @@ function nest(points: Point[], gap: number, deadline: number, attempt: number): 
     deadline,
   );
   const placements: Placement[] = [];
-  for (const [sheet, dimensions] of SHEETS.entries()) {
+  for (const [sheet, size] of sheets.entries()) {
+    const dimensions = { width: size.widthIn * 25.4, height: size.heightIn * 25.4 };
     while (placements.length < MAX_BADGE_COUNT) {
       if (Date.now() > deadline) throw new Error("Packing reached its time budget. Try again.");
       const choices = shapes.flatMap((orientation) =>
@@ -145,19 +153,27 @@ function placementChoices(input: {
 }
 
 /** Separate from the no-fit search: audit every expanded contour against sheet bounds and every other contour. */
-export function audit(points: Point[], placements: Placement[], gap: number): void {
+export function audit(
+  points: Point[],
+  placements: Placement[],
+  gap: number,
+  sheets: SheetSize[],
+): void {
   const padded = offset(points, gap / 2 + 0.02);
   const placed = placements.map((pose) => ({
     ...pose,
     polygon: translate(rotate(padded, pose.angle), pose.x, pose.y),
   }));
   for (const [i, a] of placed.entries()) {
-    const sheet = SHEETS[a.sheet];
+    const sheet = sheets[a.sheet];
     if (
       !sheet ||
       a.polygon.some(
         (p) =>
-          p.x < MARGIN || p.y < MARGIN || p.x > sheet.width - MARGIN || p.y > sheet.height - MARGIN,
+          p.x < MARGIN ||
+          p.y < MARGIN ||
+          p.x > sheet.widthIn * 25.4 - MARGIN ||
+          p.y > sheet.heightIn * 25.4 - MARGIN,
       )
     )
       throw new Error("Layout exceeds the sheet's 0.2-inch edge margin.");
@@ -174,9 +190,14 @@ export function audit(points: Point[], placements: Placement[], gap: number): vo
   }
 }
 
-function sheetSvg(source: string, shape: Shape, placements: Placement[], sheet: number): string {
-  const dimensions = SHEETS[sheet];
-  if (!dimensions) throw new Error("Unknown sheet.");
+function sheetSvg(
+  source: string,
+  shape: Shape,
+  placements: Placement[],
+  sheet: number,
+  size: SheetSize,
+): string {
+  const dimensions = { width: size.widthIn * 25.4, height: size.heightIn * 25.4 };
   const { root } = parseSvg(source);
   // A group preserves root presentation attributes, without a viewport that could crop the art.
   const document = root.ownerDocument;
@@ -203,19 +224,30 @@ export async function pack(
   cut: string,
   settings: Settings,
   store: Pick<BadgeStore, "putAsset">,
+  sheets: SheetSize[],
   options: { attempt?: number; target?: number; cached?: Layout[]; fixedSize?: boolean } = {},
 ): Promise<{ layouts: Layout[]; shortfall?: { count: number; sizeIn: number } }> {
   const { attempt = 0, target, cached = [] } = options;
   const deadline = Date.now() + 45_000;
   const search = async (sizeIn: number) => {
     const shape = shapeAt(cut, sizeIn);
-    const placements = nest(shape.searchPoints, settings.gapMm, deadline, attempt);
-    if (!placements.length) throw new Error("The cut outline does not fit on either sheet.");
-    return renderLayout(source, shape, placements, { sizeIn, gapMm: settings.gapMm }, store);
+    const placements = nest(shape.searchPoints, sheets, settings.gapMm, deadline, attempt);
+    if (!placements.length) throw new Error("The cut outline does not fit on the selected sheets.");
+    return renderLayout(
+      source,
+      shape,
+      placements,
+      { sizeIn, gapMm: settings.gapMm, sheets },
+      store,
+    );
   };
   const capacity =
     cached
-      .filter((layout) => layout.sizeIn === settings.badgeSizeIn)
+      .filter(
+        (layout) =>
+          layout.sizeIn === settings.badgeSizeIn &&
+          JSON.stringify(layout.sheetSizes) === JSON.stringify(sheets),
+      )
       .sort((a, b) => b.count - a.count)[0] ?? (await search(settings.badgeSizeIn));
   let candidate = capacity;
   // Long designs have an organizer-owned size exception. Do not shrink them to a normal badge.
@@ -239,7 +271,7 @@ export async function pack(
           source,
           shapeAt(cut, candidate.sizeIn),
           candidate.placements.slice(0, target),
-          { sizeIn: candidate.sizeIn, gapMm: settings.gapMm },
+          { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets: candidate.sheetSizes },
           store,
         );
   return { layouts: candidate.id === selected.id ? [candidate] : [candidate, selected] };
@@ -249,31 +281,40 @@ async function renderLayout(
   source: string,
   shape: Shape,
   placements: Placement[],
-  dimensions: { sizeIn: number; gapMm: number },
+  dimensions: { sizeIn: number; gapMm: number; sheets: SheetSize[] },
   store: Pick<BadgeStore, "putAsset">,
 ): Promise<Layout> {
   const { sizeIn, gapMm } = dimensions;
-  audit(shape.points, placements, gapMm);
-  const sheets = SHEETS.map((_, index) => sheetSvg(source, shape, placements, index));
+  audit(shape.points, placements, gapMm, dimensions.sheets);
+  const used = [...new Set(placements.map((pose) => pose.sheet))].sort((a, b) => a - b);
+  const sheetSizes = used.map((index) => {
+    const sheet = dimensions.sheets[index];
+    if (!sheet) throw new Error("Unknown cutting sheet.");
+    return sheet;
+  });
+  const sheets = sheetSizes.map((size, position) =>
+    sheetSvg(source, shape, placements, used[position] ?? -1, size),
+  );
   const previewSheets = sheets.map((svg, index) => {
-    const dimensions = SHEETS[index];
-    if (!dimensions) throw new Error("Unknown sheet.");
+    const size = sheetSizes[index];
+    if (!size) throw new Error("Unknown sheet.");
     return svg
-      .replace(`width="${dimensions.width}mm"`, `width="${dimensions.width}"`)
-      .replace(`height="${dimensions.height}mm"`, `height="${dimensions.height}"`);
+      .replace(`width="${size.widthIn * 25.4}mm"`, `width="${size.widthIn * 25.4}"`)
+      .replace(`height="${size.heightIn * 25.4}mm"`, `height="${size.heightIn * 25.4}"`);
   });
   const sheetHashes = await Promise.all(
     sheets.map((svg) => store.putAsset(Buffer.from(svg), "image/svg+xml")),
   );
   const preview = await store.putAsset(
-    new Resvg(
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 325"><rect width="304.8" height="304.8" fill="white" stroke="#888"/><rect x="330" width="457.2" height="304.8" fill="white" stroke="#888"/><g>${previewSheets[0] ?? ""}</g><g transform="translate(330 0)">${previewSheets[1] ?? ""}</g></svg>`,
-      {
-        background: "white",
-        fitTo: { mode: "width", value: 1200 },
-        font: { loadSystemFonts: false },
+    new Resvg(previewSvg(previewSheets, sheetSizes), {
+      background: "white",
+      fitTo: { mode: "width", value: 1200 },
+      font: {
+        loadSystemFonts: false,
+        fontDirs: [join(process.cwd(), "src/server/fonts")],
+        defaultFontFamily: "Lato",
       },
-    )
+    })
       .render()
       .asPng(),
     "image/png",
@@ -281,14 +322,31 @@ async function renderLayout(
   return {
     id: hash(JSON.stringify({ sheetHashes, sizeIn, count: placements.length })),
     sheets: sheetHashes,
+    sheetSizes,
     preview,
     sizeIn,
     widthIn: shape.widthIn,
     heightIn: shape.heightIn,
     count: placements.length,
-    placements,
+    placements: placements.map((pose) => ({ ...pose, sheet: used.indexOf(pose.sheet) })),
     audited: true,
   };
+}
+
+function previewSvg(svgs: string[], sizes: SheetSize[]): string {
+  const columns = Math.min(2, sizes.length);
+  const cellWidth = Math.max(...sizes.map((size) => size.widthIn * 25.4)) + 24;
+  const cellHeight = Math.max(...sizes.map((size) => size.heightIn * 25.4)) + 40;
+  const panels = sizes
+    .map((size, index) => {
+      const width = size.widthIn * 25.4,
+        height = size.heightIn * 25.4;
+      const x = (index % columns) * cellWidth + 12;
+      const y = Math.floor(index / columns) * cellHeight + 28;
+      return `<g transform="translate(${x} ${y})"><text y="-10" font-family="Lato" font-size="12">Sheet ${index + 1} · ${sheetLabel(size)} in</text><rect width="${width}" height="${height}" fill="white" stroke="#888"/>${svgs[index]}</g>`;
+    })
+    .join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${cellWidth * columns} ${cellHeight * Math.ceil(sizes.length / columns)}">${panels}</svg>`;
 }
 
 function exclusionRegions(

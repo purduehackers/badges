@@ -26,7 +26,7 @@ The designer or an organizer can continue after human QA. Passing file checks al
 Production has three stages:
 
 - **Estimate attendance**: Choose a target quantity. The agent can read the event’s RSVP count as evidence, but it does not invent a turnout rate or walk-in estimate.
-- **Pack the sheets**: The service arranges the outlines on one 12 × 12-inch sheet and one 12 × 18-inch sheet. It reserves a 0.2-inch margin around each sheet and audits the final outlines for overlap.
+- **Choose sheets and pack**: Start with up to two sheets of the selected acrylic from inventory. Choose **Change sheets**, or say “Use two 12 × 12 sheets,” to change the mix. The service uses those dimensions for packing, reserves a 0.2-inch edge margin, and audits the final outlines for overlap. Only sheets containing badges are exported and deducted.
 - **Publish and share**: Choose **Publish cutting files**. The service saves the sources, exports, previews, metadata, and sheet layouts, then creates `phack.rs/badge-<version>` and deducts used acrylic once.
 
 A sizing question calculates a proposal without changing the batch. For example, “How many fit at 3 inches?” returns dimensions and counts per sheet. Choosing that proposal applies it. A feasible layout is not proof of the maximum possible count.
@@ -39,18 +39,18 @@ The badge service determines which tools Eve can expose before each model step. 
 
 The tool groups match the work:
 
-| Stage                     | Available workflow tools                                                          |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| Any stage                 | `get_review`                                                                      |
-| Missing file roles        | `identify_files`, `request_replacement`                                           |
-| Missing event             | `select_event`                                                                    |
-| Acrylic selection         | `select_material`                                                                 |
-| Failed checks or human QA | `request_replacement`, `select_material`; `confirm_design` after checks pass      |
-| Pending revision          | `keep_design`, `request_replacement`                                              |
-| Production                | `estimate_attendance`, `set_target_quantity`, `preview_packing`, `select_packing` |
-| Audited layout            | `publish_batch`                                                                   |
-| Recoverable error         | `retry_failed_step`                                                               |
-| Organizer                 | `inventory`                                                                       |
+| Stage                     | Available workflow tools                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| Any stage                 | `get_review`                                                                                    |
+| Missing file roles        | `identify_files`, `request_replacement`                                                         |
+| Missing event             | `select_event`                                                                                  |
+| Acrylic selection         | `select_material`                                                                               |
+| Failed checks or human QA | `request_replacement`, `select_material`; `confirm_design` after checks pass                    |
+| Pending revision          | `keep_design`, `request_replacement`                                                            |
+| Production                | `estimate_attendance`, `set_sheets`, `set_target_quantity`, `preview_packing`, `select_packing` |
+| Audited layout            | `publish_batch`                                                                                 |
+| Recoverable error         | `retry_failed_step`                                                                             |
+| Organizer                 | `inventory`                                                                                     |
 
 The current human message authorizes at most one workflow change. File contents, filenames, quoted messages, and tool output are evidence, never authorization. The service resolves chat identity from the message Wack Hacker recorded. Discord controls use the same validation with signed revision identifiers.
 

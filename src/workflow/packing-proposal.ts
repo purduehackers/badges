@@ -5,9 +5,12 @@ import {
   layoutSchema,
   remainingCriteria,
   reviewable,
+  sheetBatchSchema,
 } from "./contracts.ts";
-import type { Review } from "./contracts.ts";
+import type { Review, SheetBatch } from "./contracts.ts";
 import { pack } from "./packing.ts";
+import { expandSheets, groupSheets, sheetLabel } from "./sheets.ts";
+import type { createBadgeInventory } from "./inventory.ts";
 import type { BadgeStore } from "./store.ts";
 import { inspectSvg } from "./svg.ts";
 
@@ -15,27 +18,47 @@ export const packingProposalSchema = z.strictObject({
   reviewId: z.string(),
   context: z.string(),
   layout: layoutSchema,
+  sheets: sheetBatchSchema,
 });
 export async function previewPacking(
   review: Review,
   store: BadgeStore,
+  inventory: Pick<ReturnType<typeof createBadgeInventory>, "defaultBatch" | "plan">,
   sizeIn: number,
   count?: number,
+  batch?: SheetBatch,
 ) {
-  if (!reviewable(review) || remainingCriteria(review).length || !review.badge || !review.settings)
+  if (
+    !reviewable(review) ||
+    remainingCriteria(review).length ||
+    !review.badge ||
+    !review.settings ||
+    !review.material
+  )
     throw new Error("Confirm the designs before planning production.");
+  const selected = batch ?? review.sheetBatch ?? (await inventory.defaultBatch(review.material));
+  if (!selected)
+    throw new Error(
+      "The selected sheets are no longer available. Add stock or choose other sheets.",
+    );
+  const sheets = groupSheets(selected);
+  const sizes = expandSheets(sheets);
+  await inventory.plan(review.material, sizes);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const result = await pack(
     source,
     inspectSvg(source, "badge").cut,
     { ...review.settings, badgeSizeIn: sizeIn },
     store,
+    sizes,
     { target: count, fixedSize: true },
   );
   const layout = result.layouts.at(-1);
   if (!layout) throw new Error("No layout was found at that size.");
   const id = await store.putAsset(
-    Buffer.from(JSON.stringify({ reviewId: review.id, context: contextHash(review), layout })),
+    Buffer.from(
+      JSON.stringify({ reviewId: review.id, context: contextHash(review), layout, sheets }),
+    ),
     "application/vnd.badge-packing+json",
   );
   return {
@@ -44,14 +67,14 @@ export async function previewPacking(
     sizeIn: layout.sizeIn,
     widthIn: layout.widthIn,
     heightIn: layout.heightIn,
-    sheets: [0, 1].map((sheet) => ({
-      size: sheet === 0 ? "12 × 12 in" : "12 × 18 in",
+    sheets: layout.sheetSizes.map((size, sheet) => ({
+      size: `${sheetLabel(size)} in`,
       count: layout.placements.filter((p) => p.sheet === sheet).length,
     })),
     requestedCount: count,
     shortfall: result.shortfall,
     currentSizeIn: badgeSize(review),
     changed: false,
-    note: "Uses one 12 × 12-inch and one 12 × 18-inch sheet. Stock is checked when you select the layout. The search does not prove maximum capacity.",
+    note: "Uses the selected sheets in stock. Availability is checked again before publishing. The search does not prove maximum capacity.",
   };
 }

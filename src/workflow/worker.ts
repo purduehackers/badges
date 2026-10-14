@@ -13,6 +13,7 @@ import type { createBadgeInventory } from "./inventory.ts";
 import { physicalDimensions, physicalSvg } from "./manufacturing.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { pack } from "./packing.ts";
+import { expandSheets } from "./sheets.ts";
 import { assertCurrentEvent, CmsEventChanged } from "./service.ts";
 import type { Cms } from "./service.ts";
 import { StaleReview } from "./store.ts";
@@ -34,7 +35,7 @@ export type DesignRenderer = (
 ) => Promise<{ badge: Uint8Array; stamp: Uint8Array }>;
 type Inventory = Pick<
   ReturnType<typeof createBadgeInventory>,
-  "plan" | "reserve" | "consume" | "release"
+  "plan" | "defaultBatch" | "reserve" | "consume" | "release"
 >;
 function nextJobs(review: Review, kind: string): JobKind[] {
   if (
@@ -159,12 +160,20 @@ async function arrange(
   )
     throw new Error("Confirm both designs before arranging them.");
   await assertCurrentEvent(review, cms);
+  const sheetBatch = review.sheetBatch ?? (await inventory?.defaultBatch(review.material));
+  if (!sheetBatch)
+    throw new Error(
+      "The selected sheets are no longer available. Add stock or choose other sheets.",
+    );
+  const sheets = expandSheets(sheetBatch);
+  await inventory?.plan(review.material, sheets);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const { layouts, shortfall } = await pack(
     source,
     inspectSvg(source, "badge").cut,
     { ...review.settings, badgeSizeIn: badgeSize(review) ?? review.settings.badgeSizeIn },
     store,
+    sheets,
     {
       attempt: review.layoutAttempt,
       ...(review.targetCount === undefined ? {} : { target: review.targetCount }),
@@ -182,16 +191,14 @@ async function arrange(
   } = review;
   if (selected && selected.sizeIn !== badgeSize(review)) {
     const { manufacturing: _manufacturing, ...resized } = base;
-    return { ...resized, fittedSizeIn: selected.sizeIn, layouts };
+    return { ...resized, sheetBatch, fittedSizeIn: selected.sizeIn, layouts };
   }
   const stockPlan = selected
-    ? await inventory?.plan(
-        review.material,
-        selected.placements.map((placement) => placement.sheet),
-      )
+    ? await inventory?.plan(review.material, selected.sheetSizes)
     : undefined;
   return {
     ...base,
+    sheetBatch,
     layouts,
     ...(selected ? { selectedLayout: selected.id } : {}),
     ...(stockPlan ? { stockPlan } : {}),
