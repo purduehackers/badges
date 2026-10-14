@@ -11,6 +11,7 @@ Use these pages to understand or run the project:
 
 - **Workflow**: [Understand the designer and manufacturer steps](docs/workflow.md)
 - **Service setup**: [Configure the badge service](docs/service.md)
+- **Stamp and material simulator**: [Try ink, paper, and acrylic finishes](https://badges.purduehackers.com/lab)
 - **Saved assets**: [Download published badge designs](https://github.com/purduehackers/badge-designs)
 
 The Next.js app previews local Scalable Vector Graphics (SVG) files. The service renders Discord images with the same Three.js scene and material definitions. Both previews show nominal geometry; neither predicts laser kerf or proves that fine details will survive manufacturing.

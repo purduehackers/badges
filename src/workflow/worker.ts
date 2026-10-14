@@ -27,7 +27,11 @@ export interface Publisher {
   ): Promise<NonNullable<Review["publication"]>>;
   link(review: Review): Promise<string>;
 }
-export type BadgeRenderer = (svg: string, material: BadgeMaterial) => Promise<Uint8Array>;
+export type DesignRenderer = (
+  badgeSvg: string,
+  stampSvg: string,
+  material: BadgeMaterial,
+) => Promise<{ badge: Uint8Array; stamp: Uint8Array }>;
 type Inventory = Pick<
   ReturnType<typeof createBadgeInventory>,
   "plan" | "reserve" | "consume" | "release"
@@ -57,7 +61,7 @@ export function createWorker(
   store: BadgeStore,
   cms: Cms,
   publisher: Publisher,
-  renderer?: BadgeRenderer,
+  renderer: DesignRenderer,
   inventory?: Inventory,
 ) {
   async function advance(review: Review, kind: string): Promise<Review> {
@@ -232,7 +236,7 @@ function assertApproval(review: Review) {
 async function prepare(
   review: Review,
   store: BadgeStore,
-  renderer?: BadgeRenderer,
+  renderer: DesignRenderer,
 ): Promise<Review> {
   if (
     !review.badge ||
@@ -250,23 +254,19 @@ async function prepare(
   const stamp = physicalSvg(stampSource, "stamp", 1.5, true);
   const badgeDimensions = physicalDimensions(inspectSvg(badgeSource, "badge").cut, "badge", sizeIn);
   const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cut, "stamp", 1.5);
-  const preview3d = await renderer?.(badge, review.material);
+  const previews = await renderer(badge, impression, review.material);
   return {
     ...review,
     manufacturing: {
       badge: await store.putAsset(Buffer.from(badge), "image/svg+xml"),
       stamp: await store.putAsset(Buffer.from(stamp), "image/svg+xml"),
       badgePreview: await store.putAsset(renderSvg(badge), "image/png"),
-      ...(preview3d
-        ? {
-            badge3d: {
-              preview: await store.putAsset(preview3d, "image/png"),
-              material: materialDescription(review.material),
-              ...review.material,
-            },
-          }
-        : {}),
-      stampPreview: await store.putAsset(renderSvg(impression), "image/png"),
+      badge3d: {
+        preview: await store.putAsset(previews.badge, "image/png"),
+        material: materialDescription(review.material),
+        ...review.material,
+      },
+      stampPreview: await store.putAsset(previews.stamp, "image/png"),
       badgeWidthIn: badgeDimensions.widthIn,
       badgeHeightIn: badgeDimensions.heightIn,
       stampWidthIn: stampSize.widthIn,

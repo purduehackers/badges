@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ink & acrylic · Badge lab</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./lab.ts"></script>
+  </head>
+  <body>
+    <header>
+      <a href="#" class="brand"><span class="mark">ph</span> BADGE LAB</a>
+      <nav>
+        <a href="#stamp">Stamp</a><a href="#acrylic">Acrylic</a
+        ><a href="#notes">Experiment notes</a>
+      </nav>
+      <span class="tag">MATERIAL EXPERIMENT</span>
+    </header>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">FROM VECTOR TO SOMETHING YOU CAN HOLD</p>
+        <h1>Ink & acrylic.</h1>
+        <p>
+          Press a stamp onto paper. Turn a badge toward the light.<br />See how your design changes
+          with the material.
+        </p>
+      </div>
+      <p id="error" role="alert" hidden></p>
+      <section id="stamp">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / INK ON PAPER</p>
+            <h2>Press your stamp</h2>
+          </div>
+          <label class="upload"
+            >Use your stamp SVG<input id="stamp-file" type="file" accept=".svg,image/svg+xml"
+          /></label>
+        </div>
+        <div class="stamp-layout">
+          <div class="paper-stage">
+            <div class="stage-top">
+              <span id="stamp-name">Hack Night 6.3</span><span>1.5 in shortest side</span>
+            </div>
+            <div id="impression" role="img" aria-label="Simulated stamp impression on paper"></div>
+            <div class="stage-bottom">
+              <span id="press-label">Normal press · smooth paper</span
+              ><button id="download-stamp" class="text-button">Save impression ↗</button>
+            </div>
+          </div>
+          <aside class="controls">
+            <p class="eyebrow">YOUR NEXT IMPRESSION</p>
+            <div class="presets">
+              <button data-preset="normal" aria-pressed="true">Normal</button
+              ><button data-preset="dry" aria-pressed="false">Dry / light</button
+              ><button data-preset="heavy" aria-pressed="false">Heavy</button>
+            </div>
+            <label class="slider"
+              >Ink on the stamp <output id="ink-value">72%</output
+              ><input id="ink" type="range" min="0" max="100" value="72"
+            /></label>
+            <label class="slider"
+              >Pressure <output id="pressure-value">72%</output
+              ><input id="pressure" type="range" min="0" max="100" value="72"
+            /></label>
+            <label class="slider"
+              >Uneven pressure <output id="tilt-value">Centered</output
+              ><input id="tilt" type="range" min="-100" max="100" value="0"
+            /></label>
+            <label class="select-label"
+              >Paper<select id="paper">
+                <option value="smooth">Smooth paper</option>
+                <option value="textured">Textured paper</option>
+              </select></label
+            >
+            <button id="press" class="primary">Press stamp again <span>↓</span></button>
+            <p class="help">
+              Each press varies the ink distribution. Black in your SVG is removed rubber; the
+              remaining surface prints.
+            </p>
+          </aside>
+        </div>
+        <div class="comparison-caption">
+          <h3>Same stamp. Three impressions.</h3>
+          <p>Same paper grain and seed. Only ink and pressure change.</p>
+        </div>
+        <div id="stamp-comparisons" class="three-grid"></div>
+      </section>
+      <section id="acrylic">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">02 / LIGHT ON ACRYLIC</p>
+            <h2>Polished surface. Matte engraving.</h2>
+          </div>
+          <label class="upload"
+            >Use your badge SVG<input id="badge-file" type="file" accept=".svg,image/svg+xml"
+          /></label>
+        </div>
+        <div class="toolbar">
+          <label
+            >Design<select id="badge-sample">
+              <option value="bottle">Bottle · Hack Night 6.17</option>
+              <option value="badge">Diamond · test design</option>
+            </select></label
+          ><label
+            >Acrylic<select id="material">
+              <option value="opaque-red">Opaque red</option>
+              <option value="opaque-black">Opaque black</option>
+              <option value="transparent-light-blue">Transparent light blue</option>
+              <option value="pearlescent-arctic-white">Pearlescent white</option>
+            </select></label
+          ><label class="angle-control"
+            >Turn toward the light<input
+              id="angle"
+              type="range"
+              min="-65"
+              max="65"
+              value="-22" /></label
+          ><button id="reset" class="secondary">Reset view</button>
+        </div>
+        <div class="three-grid" id="badge-comparisons">
+          <article>
+            <div class="viewport" role="img" aria-label="Badge with glossy engraving"></div>
+            <div class="card-copy">
+              <span class="number">A / CONTROL</span>
+              <h3>Gloss everywhere</h3>
+              <p>The reflection crosses the engraving.</p>
+            </div>
+          </article>
+          <article class="recommended">
+            <div class="viewport" role="img" aria-label="Badge with matte engraving"></div>
+            <div class="card-copy">
+              <span class="number">B / NEW DEFAULT</span>
+              <h3>Matte engraving</h3>
+              <p>Only the unengraved acrylic stays glossy.</p>
+            </div>
+          </article>
+          <article>
+            <div
+              class="viewport"
+              role="img"
+              aria-label="Badge with matte engraving and subtle handling marks"
+            ></div>
+            <div class="card-copy">
+              <span class="number">C / TEXTURE EXPERIMENT</span>
+              <h3>Light handling</h3>
+              <p>Fingerprint roughness and fine scratches.</p>
+            </div>
+          </article>
+        </div>
+        <p class="caption">
+          Drag any badge to rotate all three. The geometry, color, camera, and lighting match. Size:
+          2.2 in.
+        </p>
+      </section>
+      <section id="notes" class="notes">
+        <div>
+          <p class="eyebrow">WHAT THIS EXPERIMENT TELLS YOU</p>
+          <h2>Compare appearance.<br />Keep the physical proof.</h2>
+        </div>
+        <div>
+          <p>
+            The stamp models ink coverage, uneven contact, paper grain, and pressure-driven edge
+            spread. It doesn’t predict exact results from your ink pad or rubber.
+          </p>
+          <p>
+            The acrylic uses one surface with separate glossy and matte regions. Fingerprints affect
+            reflection roughness. Scratches affect surface normals, not the design’s color.
+          </p>
+          <p>
+            Textures: <a href="https://ambientcg.com/view?id=Paper001">ambientCG Paper 001</a>,
+            <a href="https://ambientcg.com/view?id=Fingerprints002">Fingerprints 002</a>, and
+            <a href="https://www.texturecan.com/details/372/">TextureCan Plastic 0002</a>. All CC0.
+            Texture scale and strength are estimates.
+          </p>
+          <p>These previews do not alter the SVG or replace the flat artwork check.</p>
+        </div>
+      </section>
+    </main>
+    <footer>PURDUE HACKERS <span>Design → material → impression</span></footer>
+  </body>
+</html>
