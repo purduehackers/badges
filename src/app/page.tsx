@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { UploadPanel } from "@/components/upload-panel";
@@ -30,13 +29,6 @@ function HomeContent() {
         </div>
         <div className="shrink-0 border-t border-neutral-800 px-6 py-4">
           <MaterialPicker selected={material} onSelect={setMaterial} />
-          <Link
-            href="/lab"
-            prefetch={false}
-            className="mt-4 inline-block text-sm text-neutral-400 underline"
-          >
-            Try the stamp and material simulator
-          </Link>
         </div>
       </div>
       <div className="min-h-0 flex-1">

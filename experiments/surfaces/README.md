@@ -5,11 +5,11 @@ meta:
 
 # Compare stamp impressions and acrylic finishes
 
-Use the [comparison page](https://badges.purduehackers.com/lab) to vary ink, pressure, paper, acrylic, and viewing angle. You can upload your own SVGs. The page runs the same stamp and badge renderers that generate workflow previews. Uploaded files are checked by the service but are not saved.
+Use the local comparison page to vary ink, pressure, paper, acrylic, and viewing angle. You can upload your own SVGs. The page runs the same stamp and badge renderers that generate Wack Hacker’s workflow previews. Uploaded files are checked locally and are not saved.
 
 ## Open the comparison
 
-The Next.js build serves the page at `/lab`. To work on the comparison separately, use the local server below.
+The comparison is a development tool and is not included in the public site. Use the local server below to run it.
 
 Run this command from the repository root, then open `http://127.0.0.1:30589`:
 
