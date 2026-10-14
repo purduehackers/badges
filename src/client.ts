@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export class BadgeApiError extends Error {
-  readonly url?: string;
+  readonly url: string | undefined;
   constructor(message: string, url?: string) {
     super(message);
     this.url = url;
