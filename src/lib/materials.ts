@@ -1,3 +1,4 @@
+// Acrylic presets from purduehackers/badges, commit 8598f7513f993f30389470c85b88427db46256f1.
 export type MaterialType = "transparent" | "opaque" | "translucent" | "pearlescent";
 
 export interface AcrylicMaterial {
@@ -367,8 +368,39 @@ export const ACRYLIC_MATERIALS: AcrylicMaterial[] = [
   },
 ];
 
-export const DEFAULT_MATERIAL_ID = "transparent-light-blue";
+export const STAMP_RUBBER = {
+  id: "stamp-rubber",
+  name: "Stamp rubber",
+  type: "opaque",
+  color: "#787878",
+  engraveColor: "#333333",
+} satisfies AcrylicMaterial;
+export const STOCK_MATERIALS: readonly AcrylicMaterial[] = [...ACRYLIC_MATERIALS, STAMP_RUBBER];
+export function stockMaterial(id: string): AcrylicMaterial | undefined {
+  return STOCK_MATERIALS.find((material) => material.id === id);
+}
 
+export function materialLabel(id: string): string {
+  const material = stockMaterial(id);
+  if (!material) return "Unknown material";
+  if (material.id === STAMP_RUBBER.id) return material.name;
+  return `${MATERIAL_TYPE_CONFIGS[material.type].label} ${material.name.toLowerCase()} acrylic`;
+}
+
+export function materialDescription(selection: {
+  materialId: string;
+  thicknessMm: number;
+}): string {
+  return `${materialLabel(selection.materialId)} · ${thicknessLabel(selection.thicknessMm)}`;
+}
+
+export function thicknessLabel(thicknessMm: number): string {
+  return Math.abs(thicknessMm - 3.175) < Number.EPSILON ? "⅛ in" : `${thicknessMm} mm`;
+}
+
+export const DEFAULT_MATERIAL_ID = "transparent-light-blue";
 export function getMaterial(id: string): AcrylicMaterial {
-  return ACRYLIC_MATERIALS.find((m) => m.id === id) ?? ACRYLIC_MATERIALS[0];
+  const material = stockMaterial(id);
+  if (!material) throw new Error("Unknown acrylic material.");
+  return material;
 }

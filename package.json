@@ -1,25 +1,75 @@
 {
-  "name": "badges",
+  "name": "@purduehackers/badges",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "exports": {
+    "./contracts": {
+      "types": "./src/workflow/contracts.ts",
+      "default": "./dist/client/contracts.js"
+    },
+    "./wire": {
+      "types": "./src/workflow/wire.ts",
+      "default": "./dist/client/wire.js"
+    },
+    "./presentation": {
+      "types": "./src/workflow/presentation.ts",
+      "default": "./dist/client/presentation.js"
+    },
+    "./inventory-contracts": {
+      "types": "./src/workflow/inventory-contracts.ts",
+      "default": "./dist/client/inventory-contracts.js"
+    },
+    ".": {
+      "types": "./src/workflow/contracts.ts",
+      "default": "./dist/client/contracts.js"
+    },
+    "./materials": {
+      "types": "./src/lib/materials.ts",
+      "default": "./dist/client/materials.js"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./dist/client/client.js"
+    },
+    "./tools": {
+      "types": "./src/workflow/tools.ts",
+      "default": "./dist/client/tools.js"
+    }
+  },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "oxlint --type-aware",
+    "dev": "bun run --bun next dev",
+    "build": "bun run build:service && bun run --bun next build",
+    "start": "bun run --bun next start",
+    "lint": "oxlint --type-aware --deny-warnings",
     "format": "oxfmt",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:service": "bun scripts/build-service.ts",
+    "start:service": "bun dist/server.js",
+    "migrate": "bun scripts/migrate.ts",
+    "postinstall": "bun scripts/build-client.ts"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
+    "@libsql/client": "0.17.4",
+    "@octokit/auth-app": "8.2.0",
+    "@resvg/resvg-js": "2.6.2",
+    "@sparticuz/chromium": "153.0.0",
+    "@xmldom/xmldom": "0.9.12",
+    "clipper-lib": "6.4.2",
+    "drizzle-orm": "0.45.2",
     "next": "16.1.6",
+    "octokit": "5.0.5",
+    "puppeteer-core": "25.11.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "three": "^0.183.2"
+    "svgpath": "2.6.0",
+    "three": "^0.183.2",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bun": "^1.3.14",
+    "@types/clipper-lib": "6.4.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

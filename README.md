@@ -1,36 +1,16 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+---
+meta:
+  contentType: Landing
+---
 
-## Getting Started
+# Design and make Hack Night badges
 
-First, run the development server:
+Preview your badge in acrylic, check your files, and prepare cutting sheets. This repository owns the badge workflow, materials, renderer, inventory, and publishing service. [Wack Hacker](https://github.com/purduehackers/wack-hacker) supplies Discord messages, controls, and the conversational agent.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Use these pages to understand or run the project:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Workflow**: [Understand the designer and manufacturer steps](docs/workflow.md)
+- **Service setup**: [Configure the badge service](docs/service.md)
+- **Saved assets**: [Download published badge designs](https://github.com/purduehackers/badge-designs)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Next.js app previews local Scalable Vector Graphics (SVG) files. The service renders Discord images with the same Three.js scene and material definitions. Both previews show nominal geometry; neither predicts laser kerf or proves that fine details will survive manufacturing.
