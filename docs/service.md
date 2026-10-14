@@ -46,9 +46,9 @@ Wack Hacker also needs `BADGES_API_URL` and `BADGE_AGENT_URL`. Those two URLs en
 
 ## State and migrations
 
-Migrations create badge tables without altering Wack Hacker’s other tables. You can point the service at the existing database to retain review and inventory records. Stop the old badge worker before enabling the service so both versions cannot process the same jobs.
+Use a dedicated Turso database for badges. Production connects to the `badges` Vercel Marketplace resource; preview and development connect to `badges-preview`. Run migrations against each environment before deploying. Wack Hacker accesses badge state through the API and does not need credentials for either database.
 
-The database stores review state, content-addressed assets, observed Discord messages, audit events, leased jobs, inventory changes, and publication receipts. Keep this database durable. The migration runner records each applied file and uses a transaction for its statements.
+The database stores review state, content-addressed assets, observed Discord messages, audit events, leased jobs, material stock, reservations, inventory changes, and publication receipts. Keep this database durable. The migration runner records each applied file and uses a transaction for its statements. Preview inventory is separate from production stock.
 
 ## Materials and production policy
 
