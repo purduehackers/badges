@@ -215,6 +215,7 @@ canvas {
   }
 }
 .text-button {
+  text-decoration: none;
   border: 0;
   background: transparent;
   padding: 8px 0;

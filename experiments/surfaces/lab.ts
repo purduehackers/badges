@@ -52,6 +52,14 @@ let badgeRequest = 0;
 function showStamp() {
   impression = stamp.render(current).canvas;
   element("#impression").replaceChildren(impression);
+  const rendered = impression;
+  rendered.toBlob((blob) => {
+    if (!blob || rendered !== impression) return;
+    const link = element<HTMLAnchorElement>("#download-stamp");
+    const previous = link.href;
+    link.href = URL.createObjectURL(blob);
+    if (previous.startsWith("blob:")) URL.revokeObjectURL(previous);
+  }, "image/png");
   element("#press-label").textContent =
     `${Math.round(current.ink * 100)}% ink · ${Math.round(current.pressure * 100)}% pressure · ${current.paper} paper`;
 }
@@ -128,14 +136,6 @@ element("#press").onclick = () => {
     element("#impression").classList.add("pressing");
   });
 };
-element("#download-stamp").onclick = () => {
-  if (!impression) return;
-  const link = document.createElement("a");
-  link.download = "stamp-impression.png";
-  link.href = impression.toDataURL("image/png");
-  link.click();
-};
-
 async function showBadges(fingerprints: HTMLImageElement, scratches: HTMLImageElement) {
   const request = ++badgeRequest;
   cleanupBadge?.();
