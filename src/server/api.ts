@@ -15,19 +15,22 @@ async function control(input: z.output<typeof actionRequest>, mutate: boolean) {
   const expected = componentId(input.id, input.version, actionName(input.action), ingressSecret());
   if (!bearerMatches(`Bearer ${input.control}`, expected))
     throw new Error("Invalid review control.");
-  const { service, store } = runtime();
+  const { service, store, inventory } = runtime();
   try {
-    return Response.json(
-      mutate
-        ? await service.action(
-            input.id,
-            input.version,
-            input.actor,
-            input.action,
-            `discord:${input.eventId}`,
-          )
-        : await service.validate(input.id, input.version, input.actor, input.action),
-    );
+    const stored = mutate
+      ? await service.action(
+          input.id,
+          input.version,
+          input.actor,
+          input.action,
+          `discord:${input.eventId}`,
+        )
+      : await service.validate(input.id, input.version, input.actor, input.action);
+    const availableSheets =
+      !mutate && input.action.kind === "sheets" && stored.review.material
+        ? await inventory.sheets(stored.review.material)
+        : undefined;
+    return Response.json({ ...stored, availableSheets });
   } catch (cause) {
     const current = await store.get(input.id);
     const url =
