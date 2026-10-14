@@ -271,7 +271,7 @@ export async function pack(
           source,
           shapeAt(cut, candidate.sizeIn),
           candidate.placements.slice(0, target),
-          { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets },
+          { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets: candidate.sheetSizes },
           store,
         );
   return { layouts: candidate.id === selected.id ? [candidate] : [candidate, selected] };
