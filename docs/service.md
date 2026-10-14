@@ -5,7 +5,7 @@ meta:
 
 # Configure the badge service
 
-Run the badge service beside the existing Next.js viewer. Wack Hacker calls its authenticated HTTP endpoints; the service never signs in to Discord. [The workflow architecture](workflow.md) explains the ownership and confirmation boundaries.
+The Next.js deployment serves the viewer and badge API together. Wack Hacker calls its authenticated HTTP endpoints; the service never signs in to Discord. [The workflow architecture](workflow.md) explains the ownership and confirmation boundaries.
 
 ## Commands and processes
 
@@ -23,7 +23,7 @@ Run these commands from the repository root. The `postinstall` script builds the
 | `bun run lint`          | Run lint with warnings denied                     |
 | `bunx oxfmt --check .`  | Check formatting                                  |
 
-Use a Bun host for the service. Linux rendering uses bundled Chromium; macOS needs an installed Chromium executable. Wack Hacker calls `/badges/work` after an interaction and once per minute to recover unfinished jobs.
+Vercel runs the Next.js routes on Bun. The standalone Bun server is also available for local development. Both entry points use the same request handler. Linux rendering uses bundled Chromium; macOS needs an installed Chromium executable. Wack Hacker calls `/badges/work` after an interaction and once per minute to recover unfinished jobs.
 
 ## Service environment
 
