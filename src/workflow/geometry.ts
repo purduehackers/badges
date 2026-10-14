@@ -8,10 +8,6 @@ export interface Point {
 }
 export const SCALE = 10_000;
 export const MARGIN = 5.08;
-export const SHEETS = [
-  { width: 304.8, height: 304.8 },
-  { width: 457.2, height: 304.8 },
-];
 export const toPath = (points: Point[]): Path =>
   points.map((p) => ({ X: Math.round(p.x * SCALE), Y: Math.round(p.y * SCALE) }));
 export const fromPath = (points: Path): Point[] =>

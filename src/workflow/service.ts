@@ -20,6 +20,7 @@ import type { Asset, BadgeEvent, JobKind, Person, Review, StoredReview } from ".
 import { badgeIndex, inferEvent, singleRole } from "./intake.ts";
 import type { createBadgeInventory } from "./inventory.ts";
 import { productionSettings } from "./policy.ts";
+import { expandSheets, groupSheets } from "./sheets.ts";
 import { reviewStep } from "./presentation.ts";
 import { StaleReview } from "./store.ts";
 import type { BadgeStore } from "./store.ts";
@@ -63,11 +64,14 @@ function assertUnlocked(review: Review) {
 class BadgeService {
   private readonly repository: BadgeStore;
   private readonly cms: Cms;
-  private readonly inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials">;
+  private readonly inventory: Pick<
+    ReturnType<typeof createBadgeInventory>,
+    "materials" | "defaultBatch" | "plan"
+  >;
   constructor(
     repository: BadgeStore,
     cms: Cms,
-    inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials">,
+    inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials" | "defaultBatch" | "plan">,
   ) {
     this.repository = repository;
     this.cms = cms;
@@ -189,11 +193,12 @@ class BadgeService {
         );
         if (!material)
           throw new Error("That acrylic is no longer available. Choose another material.");
-        const next = { ...invalidate(review), material };
+        const { sheetBatch: _sheets, ...reset } = invalidate(review);
+        const next = { ...reset, material };
         return { next, jobs: inspectionJobs(next) };
       }
       case "choose-material": {
-        const { material: _material, ...next } = invalidate(review);
+        const { material: _material, sheetBatch: _sheets, ...next } = invalidate(review);
         return { next, jobs: [] };
       }
       case "retry": {
@@ -211,7 +216,40 @@ class BadgeService {
           note: "",
           at: new Date().toISOString(),
         }));
-        return { next: { ...review, decisions: [...review.decisions, ...confirmed] }, jobs: [] };
+        const sheetBatch =
+          review.sheetBatch ??
+          (review.material ? await this.inventory.defaultBatch(review.material) : undefined);
+        return {
+          next: { ...review, sheetBatch, decisions: [...review.decisions, ...confirmed] },
+          jobs: [],
+        };
+      }
+      case "sheets": {
+        if (!action.sheets || !review.material)
+          throw new Error("Choose the sheets to use for this batch.");
+        const sheetBatch = groupSheets(action.sheets);
+        await this.inventory.plan(review.material, expandSheets(sheetBatch));
+        const {
+          layouts: _layouts,
+          selectedLayout: _selected,
+          stockPlan: _stock,
+          quantityShortfall: _shortfall,
+          failure: _failure,
+          fittedSizeIn: _fitted,
+          manufacturing: _manufacturing,
+          ...rest
+        } = review;
+        return {
+          next: {
+            ...rest,
+            sheetBatch,
+            layouts: [],
+            layoutAttempt: 0,
+            manufacturer: actor.person,
+            generation: review.generation + 1,
+          },
+          jobs: ["prepare"],
+        };
       }
       case "layout": {
         const proposal = await this.repository.asset(action.id);
@@ -234,6 +272,7 @@ class BadgeService {
             generation: review.generation + 1,
             targetCount: plan.layout.count,
             fittedSizeIn: plan.layout.sizeIn,
+            sheetBatch: plan.sheets,
             layouts: [plan.layout],
           },
           jobs: ["prepare"],
@@ -287,7 +326,7 @@ class BadgeService {
 export function createBadgeService(
   repository: BadgeStore,
   cms: Cms,
-  inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials">,
+  inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials" | "defaultBatch" | "plan">,
 ) {
   return new BadgeService(repository, cms, inventory);
 }
@@ -345,9 +384,16 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
   if ((action.kind === "material" || action.kind === "choose-material") && !review.event)
     throw new Error("Choose a Hack Night before choosing acrylic.");
   const step = reviewStep(review);
+  const recoveringSheets =
+    action.kind === "sheets" &&
+    step === "error" &&
+    !review.contextChanged &&
+    reviewable(review) &&
+    remainingCriteria(review).length === 0;
   if (
-    ["quantity", "layout", "publish"].includes(action.kind) &&
-    !["quantity", "layout"].includes(step)
+    ["quantity", "layout", "publish", "sheets"].includes(action.kind) &&
+    !["quantity", "layout"].includes(step) &&
+    !recoveringSheets
   )
     throw new Error("Confirm the designs before planning production.");
   switch (action.kind) {
@@ -378,6 +424,7 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
       break;
     case "layout":
     case "quantity":
+    case "sheets":
       break;
     case "upload":
       break;

@@ -6,7 +6,8 @@ import { DISCORD_GUILD_ID } from "../server/platform.ts";
 import { and, asc, count, desc, eq, gt } from "drizzle-orm";
 
 import { stockPlanSchema } from "./contracts.ts";
-import type { BadgeMaterial, Review, StockPlan } from "./contracts.ts";
+import type { BadgeMaterial, Review, SheetBatch, SheetSize, StockPlan } from "./contracts.ts";
+import { groupSheets, sheetLabel } from "./sheets.ts";
 import { stockChangeSchema, stockItemSchema, stockLabel } from "./inventory-contracts.ts";
 import type {
   InventoryRequest,
@@ -79,50 +80,59 @@ class BadgeInventory {
   async materials(): Promise<BadgeMaterial[]> {
     const stock = await this.available();
     return ACRYLIC_MATERIALS.filter((material) =>
-      [12, 18].every((height) =>
-        stock.some(
-          (item) =>
-            item.materialId === material.id &&
-            item.widthIn === 12 &&
-            item.heightIn === height &&
-            item.thicknessMm === ACRYLIC_THICKNESS_MM &&
-            item.quantity > item.reserved,
-        ),
+      stock.some(
+        (item) =>
+          item.materialId === material.id &&
+          item.thicknessMm === ACRYLIC_THICKNESS_MM &&
+          item.quantity > item.reserved,
       ),
     ).map((material) => ({ materialId: material.id, thicknessMm: ACRYLIC_THICKNESS_MM }));
   }
 
-  async plan(material: BadgeMaterial, usedSheets: number[] = [0, 1]): Promise<StockPlan> {
-    if (!usedSheets.length || usedSheets.some((index) => index !== 0 && index !== 1))
-      throw new InventoryError("Arrange the badges on the configured sheets first.");
-    const lengths = [...new Set(usedSheets)]
-      .sort((a, b) => a - b)
-      .map((index) => (index === 0 ? 12 : 18));
-    const stock = (await this.available()).filter(
+  async sheets(material: BadgeMaterial): Promise<StockItem[]> {
+    return (await this.available()).filter(
       (item) =>
         item.materialId === material.materialId &&
         item.materialId !== "stamp-rubber" &&
         item.thicknessMm === material.thicknessMm &&
         item.quantity > item.reserved,
     );
-    const sheets = lengths.flatMap((height) => {
-      const sheet = stock.find((item) => item.widthIn === 12 && item.heightIn === height);
-      return sheet ? [sheet] : [];
-    });
-    if (sheets.length === lengths.length)
-      return stockPlanSchema.parse(
-        sheets.map((item) => ({
+  }
+
+  async defaultBatch(material: BadgeMaterial): Promise<SheetBatch | undefined> {
+    const stock = await this.sheets(material);
+    // Start with two sheets, preferring a mix when both sizes are available.
+    const selected = stock.slice(0, 2).map((item) => ({
+      widthIn: item.widthIn,
+      heightIn: item.heightIn,
+      quantity: 1,
+    }));
+    const first = selected[0];
+    if (selected.length === 1 && first && stock[0] && stock[0].quantity - stock[0].reserved >= 2)
+      first.quantity = 2;
+    return selected.length ? selected : undefined;
+  }
+
+  async plan(material: BadgeMaterial, usedSheets: SheetSize[]): Promise<StockPlan> {
+    const batch = groupSheets(usedSheets.map((sheet) => ({ ...sheet, quantity: 1 })));
+    const stock = await this.sheets(material);
+    return stockPlanSchema.parse(
+      batch.map((sheet) => {
+        const item = stock.find((candidate) => sheetLabel(candidate) === sheetLabel(sheet));
+        if (!item || item.quantity - item.reserved < sheet.quantity)
+          throw new InventoryError(
+            `The selected sheets are no longer available: ${sheet.quantity} × ${sheetLabel(sheet)} in, ${materialDescription(material)}. Change the sheets, or ask an organizer to update inventory.`,
+          );
+        return {
           itemId: item.id,
           materialId: item.materialId,
           label: stockLabel(item),
           widthIn: item.widthIn,
           heightIn: item.heightIn,
           thicknessMm: item.thicknessMm,
-          quantity: 1,
-        })),
-      );
-    throw new InventoryError(
-      `The selected acrylic is unavailable: ${materialDescription(material)}. Choose another material, or ask an organizer to restock ${lengths.map((height) => `12 × ${height}-inch`).join(" and ")} sheets.`,
+          quantity: sheet.quantity,
+        };
+      }),
     );
   }
 

@@ -10,6 +10,7 @@ import {
   criteria,
   MAX_SVG_BYTES,
   targetCountSchema,
+  sheetBatchSchema,
 } from "./contracts.ts";
 
 const commonActions = [
@@ -18,6 +19,7 @@ const commonActions = [
   z.strictObject({ kind: z.literal("event"), id: z.string().min(1).max(128) }),
   z.strictObject({ kind: z.literal("material"), id: z.string().min(1).max(100) }),
   z.strictObject({ kind: z.literal("quantity"), count: targetCountSchema.optional() }),
+  z.strictObject({ kind: z.literal("sheets"), sheets: sheetBatchSchema.optional() }),
   z.strictObject({ kind: z.literal("confirm") }),
   z.strictObject({ kind: z.literal("layout"), id: z.string().regex(/^[a-f0-9]{64}$/u) }),
 

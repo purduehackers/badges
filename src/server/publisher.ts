@@ -10,6 +10,7 @@ import { Octokit } from "octokit";
 import { z } from "zod";
 
 import { writeBadgeLink } from "./shortlink.ts";
+import { sheetFileNames } from "../workflow/sheets.ts";
 
 const repository = { owner: "purduehackers", repo: "badge-designs" };
 function client(): Octokit {
@@ -49,9 +50,9 @@ async function files(review: Review, store: BadgeStore): Promise<Map<string, Uin
     ["stamp.svg", review.manufacturing?.stamp],
     ["badge.png", review.manufacturing?.badgePreview],
     ["stamp.png", review.manufacturing?.stampPreview],
-    ["12x12.svg", layout.sheets[0]],
-    ["12x18.svg", layout.sheets[1]],
   ]);
+  for (const [index, name] of sheetFileNames(layout.sheetSizes).entries())
+    sources.set(name, layout.sheets[index]);
   for (const [name, digest] of sources) {
     if (!digest) throw new Error(`Missing ${name} evidence.`);
     content.set(name, (await store.asset(digest)).bytes);
@@ -105,7 +106,7 @@ class GithubPublisher implements Publisher {
     const baseTree = await github.rest.git.createTree({
       ...repository,
       base_tree: baseCommit.tree.sha,
-      tree: entries,
+      tree: [...entries, ...(await obsoleteSheets(github, prefix, baseRef, content))],
     });
     if (baseTree.data.sha === baseCommit.tree.sha) {
       await verifyFiles(github, prefix, baseRef, content);
@@ -138,7 +139,7 @@ class GithubPublisher implements Publisher {
         : await github.rest.git.createTree({
             ...repository,
             base_tree: parentCommit.tree.sha,
-            tree: entries,
+            tree: [...entries, ...(await obsoleteSheets(github, prefix, parent, content))],
           });
     const commit =
       tree.data.sha === parentCommit.tree.sha
@@ -214,7 +215,12 @@ class GithubPublisher implements Publisher {
     if (
       changed.some(
         (file) =>
-          !expectedPaths.has(file.filename) ||
+          (!expectedPaths.has(file.filename) &&
+            !(
+              file.status === "removed" &&
+              file.filename.startsWith(`${prefix}/`) &&
+              cuttingFile(file.filename.slice(prefix.length + 1))
+            )) ||
           (file.previous_filename && !file.previous_filename.startsWith(`${prefix}/`)),
       )
     )
@@ -272,6 +278,8 @@ async function verifyFiles(
   head: string,
   expectedFiles: Map<string, Uint8Array>,
 ): Promise<void> {
+  if ((await obsoleteSheets(github, prefix, head, expectedFiles)).length)
+    throw new Error("The repository still contains cutting sheets from a different layout.");
   for (const [name, expected] of expectedFiles) {
     const response = await github.rest.repos.getContent({
       ...repository,
@@ -288,6 +296,33 @@ async function verifyFiles(
         : (await github.rest.git.getBlob({ ...repository, file_sha: value.sha })).data.content;
     if (hash(Buffer.from(content, "base64")) !== hash(expected))
       throw new Error(`Repository evidence differs: ${name}.`);
+  }
+}
+
+function cuttingFile(name: string): boolean {
+  return /^\d+(?:\.\d+)?x\d+(?:\.\d+)?(?:-\d+)?\.svg$/u.test(name);
+}
+
+async function obsoleteSheets(
+  github: Octokit,
+  prefix: string,
+  ref: string,
+  files: Map<string, Uint8Array>,
+) {
+  try {
+    const response = await github.rest.repos.getContent({ ...repository, path: prefix, ref });
+    if (!Array.isArray(response.data)) throw new Error("The badge folder is not a directory.");
+    return response.data
+      .filter((file) => file.type === "file" && cuttingFile(file.name) && !files.has(file.name))
+      .map((file) => ({
+        path: file.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: null,
+      }));
+  } catch (cause) {
+    if (z.object({ status: z.literal(404) }).safeParse(cause).success) return [];
+    throw cause;
   }
 }
 

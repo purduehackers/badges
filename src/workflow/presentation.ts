@@ -1,5 +1,6 @@
 import { checkIds, remainingCriteria, staticPassed } from "./contracts.ts";
 import type { Check, Criterion, Review } from "./contracts.ts";
+export { sheetLabel } from "./sheets.ts";
 
 const unclearReply = "Ask me again, or use the latest card to continue.";
 
@@ -80,6 +81,7 @@ export function failureGuidance(detail: string): string {
     return "Only the designer who uploaded these files can confirm or replace them.";
   if (/Explain what needs/iu.test(detail)) return "Add a short note about what needs changing.";
   if (/^Enter a whole number/iu.test(detail)) return detail;
+  if (/^Enter sheets|^Choose up to \d+ sheets|^Choose the sheets/iu.test(detail)) return detail;
   if (/different review thread|p-badges thread/iu.test(detail))
     return "Open the original thread and use its latest message.";
   if (/event.*changed|production settings changed/iu.test(detail))
@@ -212,7 +214,7 @@ export function reviewPrompt(review: Review): string {
     case "layout": {
       const layout = review.layouts.find((candidate) => candidate.id === review.selectedLayout);
       const sheets = new Set(layout?.placements.map((placement) => placement.sheet)).size;
-      return `This layout fits ${layout?.count} badges on ${sheets === 1 ? "one sheet" : "two sheets"}.`;
+      return `This layout fits ${layout?.count} badges on ${sheets === 1 ? "one sheet" : `${sheets} sheets`}.`;
     }
     case "publishing":
       return "Saving your files…";

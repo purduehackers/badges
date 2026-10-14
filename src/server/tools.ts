@@ -67,6 +67,8 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
       ["set_target_quantity", { kind: "quantity", count: 80 }],
       ["select_packing", { kind: "layout", id: "candidate" }],
     );
+  if (["quantity", "layout", "error"].includes(step))
+    candidates.push(["set_sheets", { kind: "sheets" }]);
   if (step === "layout") candidates.push(["publish_batch", { kind: "publish" }]);
   if (step === "error")
     candidates.push(["retry_failed_step", { kind: review.contextChanged ? "refresh" : "retry" }]);
@@ -113,6 +115,15 @@ export async function reviewStatus(context: Context) {
     },
     remainingConfirmations: remainingCriteria(review),
     quantity: review.targetCount,
+    sheets: review.sheetBatch,
+    availableSheets:
+      tools.includes("set_sheets") && review.material
+        ? (await runtime().inventory.sheets(review.material)).map((item) => ({
+            widthIn: item.widthIn,
+            heightIn: item.heightIn,
+            quantity: item.quantity - item.reserved,
+          }))
+        : undefined,
     sizeIn: badgeSize(review),
     quantityShortfall: review.quantityShortfall,
     failure: review.failure ? failureGuidance(review.failure) : undefined,
@@ -145,7 +156,7 @@ export async function executeTool(request: z.output<typeof toolRequestSchema>) {
   const { review } = stored;
   if (request.name === "estimate_attendance") return attendance(review.event?.id);
   if (request.name === "preview_packing" && "sizeIn" in input)
-    return previewPacking(review, store, input.sizeIn, input.count);
+    return previewPacking(review, store, inventory, input.sizeIn, input.count, input.sheets);
   if (!("version" in input)) throw new Error("Read the current review before changing it.");
   if (await store.hasEvent(eventId)) throw new Error("This message already changed the review.");
   let action: Action;
@@ -180,6 +191,9 @@ export async function executeTool(request: z.output<typeof toolRequestSchema>) {
         kind: "quantity",
         count: badgeTools.set_target_quantity.schema.parse(input).count,
       };
+      break;
+    case "set_sheets":
+      action = { kind: "sheets", sheets: badgeTools.set_sheets.schema.parse(input).sheets };
       break;
     case "select_packing":
       action = { kind: "layout", id: badgeTools.select_packing.schema.parse(input).id };
