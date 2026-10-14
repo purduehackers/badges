@@ -17,6 +17,7 @@ export interface MaterialPhysicalProps {
   clearcoatRoughness: number;
   transparent: boolean;
   opacity: number;
+  transmission: number;
   envMapIntensity: number;
   sheen: number;
   sheenRoughness: number;
@@ -39,6 +40,7 @@ export const MATERIAL_TYPE_CONFIGS: Record<MaterialType, MaterialTypeConfig> = {
       clearcoatRoughness: 0.05,
       transparent: true,
       opacity: 0.6,
+      transmission: 0.85,
       envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
@@ -53,6 +55,7 @@ export const MATERIAL_TYPE_CONFIGS: Record<MaterialType, MaterialTypeConfig> = {
       clearcoatRoughness: 0.05,
       transparent: false,
       opacity: 1,
+      transmission: 0,
       envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
@@ -67,6 +70,7 @@ export const MATERIAL_TYPE_CONFIGS: Record<MaterialType, MaterialTypeConfig> = {
       clearcoatRoughness: 0.05,
       transparent: true,
       opacity: 0.93,
+      transmission: 0.15,
       envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
@@ -81,6 +85,7 @@ export const MATERIAL_TYPE_CONFIGS: Record<MaterialType, MaterialTypeConfig> = {
       clearcoatRoughness: 0.3,
       transparent: false,
       opacity: 1,
+      transmission: 0,
       envMapIntensity: 0,
       sheen: 0.08,
       sheenRoughness: 0.25,

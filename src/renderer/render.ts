@@ -2,17 +2,20 @@ import { inspectSvg } from "../workflow/svg.ts";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
-import type { RenderInput } from "./types.ts";
+import type { DesignRenderInput } from "./types.ts";
 
 declare const BADGE_SCENE: string;
 
 export { viewerPage } from "./viewer-page.ts";
 
 /** Each job uses a fresh browser profile; it never accesses a signed-in browser. */
-export async function renderBadge(input: RenderInput): Promise<Uint8Array> {
+export async function renderDesigns(
+  input: DesignRenderInput,
+): Promise<{ badge: Uint8Array; stamp: Uint8Array }> {
   const inspected = inspectSvg(input.svg, "badge");
-  if (inspected.checks.some((check) => check.status !== "pass"))
-    throw new Error("Check the SVG before rendering the badge.");
+  const stamp = inspectSvg(input.stampSvg, "stamp");
+  if ([...inspected.checks, ...stamp.checks].some((check) => check.status !== "pass"))
+    throw new Error("Check both SVGs before rendering the designs.");
   if (!Number.isFinite(input.thicknessMm) || input.thicknessMm <= 0 || input.thicknessMm > 100)
     throw new Error("Invalid preview thickness.");
   const localExecutable = process.env.BADGE_CHROMIUM_EXECUTABLE_PATH?.trim() || undefined;
@@ -42,12 +45,17 @@ export async function renderBadge(input: RenderInput): Promise<Uint8Array> {
     });
     await page.setContent('<html><body style="margin:0"></body></html>');
     await page.addScriptTag({ content: BADGE_SCENE });
-    const data = await page.evaluate((options) => window.renderBadge(options), {
+    const data = await page.evaluate((options) => window.renderDesigns(options), {
       ...input,
       svg: inspected.source,
+      stampSvg: stamp.source,
     });
-    if (!data.startsWith("data:image/png;base64,")) throw new Error("Badge preview is not a PNG.");
-    return Buffer.from(data.slice("data:image/png;base64,".length), "base64");
+    function png(value: string) {
+      if (!value.startsWith("data:image/png;base64,"))
+        throw new Error("Design preview is not a PNG.");
+      return Buffer.from(value.slice("data:image/png;base64,".length), "base64");
+    }
+    return { badge: png(data.badge), stamp: png(data.stamp) };
   } finally {
     clearTimeout(deadline);
     await browser.close();

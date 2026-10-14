@@ -1,4 +1,5 @@
 import type { AcrylicMaterial } from "../lib/materials.ts";
+import type { StampOptions } from "./stamp.ts";
 
 export interface RenderInput {
   /** A checked, physical SVG with millimeter viewBox coordinates. */
@@ -8,9 +9,15 @@ export interface RenderInput {
   sizeIn?: number;
 }
 
+export interface DesignRenderInput extends RenderInput {
+  /** Unmirrored engraving source; black is removed rubber. */
+  stampSvg: string;
+  stampSettings?: StampOptions;
+}
+
 declare global {
   interface Window {
-    renderBadge(input: RenderInput): Promise<string>;
+    renderDesigns(input: DesignRenderInput): Promise<{ badge: string; stamp: string }>;
     badgeInput: RenderInput;
   }
 }

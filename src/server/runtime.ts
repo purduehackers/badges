@@ -1,4 +1,4 @@
-import { renderBadge } from "../renderer/render.ts";
+import { renderDesigns } from "../renderer/render.ts";
 import { createBadgeService, createBadgeStore, createWorker } from "../workflow/index.ts";
 import { createBadgeInventory } from "../workflow/inventory.ts";
 import { stockMaterial } from "../lib/materials.ts";
@@ -17,11 +17,11 @@ export function runtime() {
       store,
       cms,
       createPublisher(store),
-      async (svg, selection) => {
+      async (svg, stampSvg, selection) => {
         const material = stockMaterial(selection.materialId);
         if (!material || material.id === "stamp-rubber")
           throw new Error("Choose an acrylic material.");
-        return renderBadge({ svg, material, thicknessMm: selection.thicknessMm });
+        return renderDesigns({ svg, stampSvg, material, thicknessMm: selection.thicknessMm });
       },
       inventory,
     ),
