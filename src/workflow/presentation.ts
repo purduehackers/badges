@@ -1,6 +1,6 @@
-import { checkIds, remainingCriteria, staticPassed } from "./contracts.ts";
+import { checkIds, remainingCriteria, staticPassed, reviewMaterials } from "./contracts.ts";
 import type { Check, Criterion, Review } from "./contracts.ts";
-export { sheetLabel } from "./sheets.ts";
+export { sheetLabel, sheetKey } from "./sheets.ts";
 
 const unclearReply = "Ask me again, or use the latest card to continue.";
 
@@ -149,7 +149,7 @@ export function reviewStep(review: Review): ReviewStep {
     review.badge &&
     review.stamp &&
     review.event &&
-    review.material &&
+    reviewMaterials(review).length &&
     review.checks.length &&
     !staticPassed(review)
   )
@@ -160,7 +160,7 @@ export function reviewStep(review: Review): ReviewStep {
   if (!review.rolesConfirmed) return "files";
   if (!review.badge || !review.stamp) return "missing";
   if (!review.event) return "event";
-  if (!review.material) return "material";
+  if (!reviewMaterials(review).length) return "material";
   if (!review.checks.length) return "checking";
   if (!staticPassed(review)) return "fix";
   if (!review.manufacturing) return "preparing";
@@ -183,7 +183,7 @@ export function reviewPrompt(review: Review): string {
     case "upload":
       return `Attach your updated ${review.pendingRole} SVG in this thread.`;
     case "material":
-      return "Choose acrylic for your badges. I’ll use it for the 3D preview and cutting sheets.";
+      return "Choose one or more acrylic colors. The preview will use one of your selected colors.";
     case "checking":
       return "Checking your files…";
     case "fix": {

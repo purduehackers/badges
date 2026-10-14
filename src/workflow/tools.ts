@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { digestSchema, targetCountSchema, sheetBatchSchema } from "./contracts.ts";
+import {
+  digestSchema,
+  targetCountSchema,
+  sheetBatchSchema,
+  materialIdsSchema,
+} from "./contracts.ts";
 import { inventoryActionSchema } from "./inventory-contracts.ts";
 
 const current = { version: z.int().nonnegative() };
@@ -18,8 +23,9 @@ export const badgeTools = {
     schema: z.strictObject({ ...current, id: z.string() }),
   },
   select_material: {
-    description: "Select the designer's acrylic, or omit id to show the choices.",
-    schema: z.strictObject({ ...current, id: z.string().optional() }),
+    description:
+      "Select one or more acrylic colors the designer wants, or omit ids to show the choices. The preview uses the first selected color.",
+    schema: z.strictObject({ ...current, ids: materialIdsSchema.optional() }),
   },
   confirm_design: {
     description:
@@ -45,7 +51,7 @@ export const badgeTools = {
   },
   set_sheets: {
     description:
-      "Choose the manufacturer's sheet sizes and quantities for this batch, such as two 12 by 12-inch sheets. Checks stock and recalculates an existing target without repeating design QA.",
+      "Choose sheet sizes, colors, and quantities from get_review's available stock. Include material for every sheet when multiple colors are selected. Checks stock and recalculates an existing target without repeating design QA.",
     schema: z.strictObject({ ...current, sheets: sheetBatchSchema }),
   },
   preview_packing: {

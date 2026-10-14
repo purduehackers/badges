@@ -1,11 +1,10 @@
 import { z } from "zod";
 
 export class BadgeApiError extends Error {
-  constructor(
-    message: string,
-    readonly url?: string,
-  ) {
+  readonly url?: string;
+  constructor(message: string, url?: string) {
     super(message);
+    this.url = url;
   }
 }
 export interface BadgeClient {

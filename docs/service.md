@@ -54,7 +54,7 @@ The database stores review state, content-addressed assets, observed Discord mes
 
 Edit `src/lib/materials.ts` to add or change acrylic options. The website, Discord preview, and stock suggestions read that catalog. Inventory commands track quantities separately.
 
-Edit `src/workflow/policy.ts` for badge sizing and spacing, and `src/workflow/geometry.ts` for the edge margin. The workflow uses ⅛-inch acrylic. Manufacturing starts with up to two in-stock sheets and allows the manufacturer to change sizes and quantities, up to ten sheets per batch. Dimensions come from inventory. Publication deducts only sheets used in the layout; stamp rubber is tracked manually.
+Edit `src/workflow/policy.ts` for badge sizing and spacing, and `src/workflow/geometry.ts` for the edge margin. The workflow uses ⅛-inch acrylic. Designers can select multiple colors; the preview uses the first selection. Manufacturing starts with one in-stock sheet per selected color, or up to two sheets for a single color. Manufacturers can change sizes and quantities, up to ten sheets per batch. Each sheet retains its material through packing, export, reservation, and deduction. Publication deducts only sheets used in the layout; stamp rubber is tracked manually.
 
 ## Integration endpoints
 

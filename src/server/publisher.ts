@@ -300,7 +300,9 @@ async function verifyFiles(
 }
 
 function cuttingFile(name: string): boolean {
-  return /^\d+(?:\.\d+)?x\d+(?:\.\d+)?(?:-\d+)?\.svg$/u.test(name);
+  return /^\d+(?:\.\d+)?x\d+(?:\.\d+)?(?:-[a-z][a-z0-9-]*-\d+(?:\.\d+)?mm)?(?:-\d+)?\.svg$/u.test(
+    name,
+  );
 }
 
 async function obsoleteSheets(
