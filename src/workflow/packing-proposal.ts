@@ -5,11 +5,12 @@ import {
   layoutSchema,
   remainingCriteria,
   reviewable,
+  reviewMaterials,
   sheetBatchSchema,
 } from "./contracts.ts";
 import type { Review, SheetBatch } from "./contracts.ts";
 import { pack } from "./packing.ts";
-import { expandSheets, groupSheets, sheetLabel } from "./sheets.ts";
+import { expandSheets, resolveSheets, sheetLabel } from "./sheets.ts";
 import type { createBadgeInventory } from "./inventory.ts";
 import type { BadgeStore } from "./store.ts";
 import { inspectSvg } from "./svg.ts";
@@ -33,17 +34,18 @@ export async function previewPacking(
     remainingCriteria(review).length ||
     !review.badge ||
     !review.settings ||
-    !review.material
+    !reviewMaterials(review).length
   )
     throw new Error("Confirm the designs before planning production.");
-  const selected = batch ?? review.sheetBatch ?? (await inventory.defaultBatch(review.material));
+  const selected =
+    batch ?? review.sheetBatch ?? (await inventory.defaultBatch(reviewMaterials(review)));
   if (!selected)
     throw new Error(
       "The selected sheets are no longer available. Add stock or choose other sheets.",
     );
-  const sheets = groupSheets(selected);
+  const sheets = resolveSheets(selected, reviewMaterials(review));
   const sizes = expandSheets(sheets);
-  await inventory.plan(review.material, sizes);
+  await inventory.plan(reviewMaterials(review), sizes);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const result = await pack(
     source,
@@ -69,6 +71,7 @@ export async function previewPacking(
     heightIn: layout.heightIn,
     sheets: layout.sheetSizes.map((size, sheet) => ({
       size: `${sheetLabel(size)} in`,
+      material: size.material,
       count: layout.placements.filter((p) => p.sheet === sheet).length,
     })),
     requestedCount: count,

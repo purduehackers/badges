@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { badgeTools, badgeToolNameSchema, type BadgeToolName } from "../workflow/tools.ts";
-import { badgeSize, remainingCriteria, staticPassed } from "../workflow/contracts.ts";
+import {
+  badgeSize,
+  remainingCriteria,
+  staticPassed,
+  reviewMaterials,
+} from "../workflow/contracts.ts";
 import type { StoredReview } from "../workflow/contracts.ts";
 import { assertScope, assertControl, type Action, type Actor } from "../workflow/service.ts";
 import {
@@ -57,7 +62,7 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
     ]);
   if (step === "event") candidates.push(["select_event", { kind: "event", id: "candidate" }]);
   if (["material", "qa", "fix"].includes(step))
-    candidates.push(["select_material", { kind: "material", id: "candidate" }]);
+    candidates.push(["select_material", { kind: "material", ids: ["candidate"] }]);
   if (step === "qa") candidates.push(["confirm_design", { kind: "confirm" }]);
   if (["files", "missing", "upload", "fix", "qa", "quantity", "layout", "done"].includes(step))
     candidates.push(["request_replacement", { kind: "upload", role: "badge" }]);
@@ -99,7 +104,11 @@ export async function reviewStatus(context: Context) {
     next: reviewPrompt(review),
     isDesigner: actor.person.id === review.author.id,
     event: review.event,
-    material: review.material ? materialDescription(review.material) : undefined,
+    selectedMaterials: reviewMaterials(review).map((material) => ({
+      ...material,
+      label: materialDescription(material),
+    })),
+    previewMaterial: reviewMaterials(review)[0],
     files: review.uploads.map((asset, index) => ({
       label: index === 0 ? "A" : "B",
       filename: asset.name,
@@ -117,8 +126,10 @@ export async function reviewStatus(context: Context) {
     quantity: review.targetCount,
     sheets: review.sheetBatch,
     availableSheets:
-      tools.includes("set_sheets") && review.material
-        ? (await runtime().inventory.sheets(review.material)).map((item) => ({
+      tools.includes("set_sheets") && reviewMaterials(review).length
+        ? (await runtime().inventory.sheets(reviewMaterials(review))).map((item) => ({
+            material: { materialId: item.materialId, thicknessMm: item.thicknessMm },
+            label: materialDescription(item),
             widthIn: item.widthIn,
             heightIn: item.heightIn,
             quantity: item.quantity - item.reserved,
@@ -173,8 +184,8 @@ export async function executeTool(request: z.output<typeof toolRequestSchema>) {
       action = { kind: "event", id: badgeTools.select_event.schema.parse(input).id };
       break;
     case "select_material": {
-      const { id } = badgeTools.select_material.schema.parse(input);
-      action = id ? { kind: "material", id } : { kind: "choose-material" };
+      const { ids } = badgeTools.select_material.schema.parse(input);
+      action = ids ? { kind: "material", ids } : { kind: "choose-material" };
       break;
     }
     case "confirm_design":

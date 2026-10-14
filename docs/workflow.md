@@ -26,7 +26,7 @@ The designer or an organizer can continue after human QA. Passing file checks al
 Production has three stages:
 
 - **Estimate attendance**: Choose a target quantity. The agent can read the event’s RSVP count as evidence, but it does not invent a turnout rate or walk-in estimate.
-- **Choose sheets and pack**: Start with up to two sheets of the selected acrylic from inventory. Choose **Change sheets**, or say “Use two 12 × 12 sheets,” to change the mix. The service uses those dimensions for packing, reserves a 0.2-inch edge margin, and audits the final outlines for overlap. Only sheets containing badges are exported and deducted.
+- **Choose sheets and pack**: Start with one sheet per selected acrylic color from inventory, or up to two sheets for a single color. Choose **Change sheets**, or say “Use one blue 12 × 12 and one orange 12 × 18,” to change the mix. The service uses those dimensions for packing, reserves a 0.2-inch edge margin, and audits the final outlines for overlap. Counts are shared across colors within each color’s available capacity. Only sheets containing badges are exported and deducted; cutting-file names identify the size, color, and thickness.
 - **Publish and share**: Choose **Publish cutting files**. The service saves the sources, exports, previews, metadata, and sheet layouts, then creates `phack.rs/badge-<version>` and deducts used acrylic once.
 
 A sizing question calculates a proposal without changing the batch. For example, “How many fit at 3 inches?” returns dimensions and counts per sheet. Choosing that proposal applies it. A feasible layout is not proof of the maximum possible count.

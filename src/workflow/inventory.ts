@@ -5,9 +5,9 @@ import type { Db } from "../server/db/index.ts";
 import { DISCORD_GUILD_ID } from "../server/platform.ts";
 import { and, asc, count, desc, eq, gt } from "drizzle-orm";
 
-import { stockPlanSchema } from "./contracts.ts";
-import type { BadgeMaterial, Review, SheetBatch, SheetSize, StockPlan } from "./contracts.ts";
-import { groupSheets, sheetLabel } from "./sheets.ts";
+import { includesMaterial, reviewMaterials, stockPlanSchema } from "./contracts.ts";
+import type { BadgeMaterial, CuttingSheet, Review, SheetBatch, StockPlan } from "./contracts.ts";
+import { resolveSheets, sheetKey, sheetLabel } from "./sheets.ts";
 import { stockChangeSchema, stockItemSchema, stockLabel } from "./inventory-contracts.ts";
 import type {
   InventoryRequest,
@@ -89,22 +89,29 @@ class BadgeInventory {
     ).map((material) => ({ materialId: material.id, thicknessMm: ACRYLIC_THICKNESS_MM }));
   }
 
-  async sheets(material: BadgeMaterial): Promise<StockItem[]> {
-    return (await this.available()).filter(
-      (item) =>
-        item.materialId === material.materialId &&
-        item.materialId !== "stamp-rubber" &&
-        item.thicknessMm === material.thicknessMm &&
-        item.quantity > item.reserved,
+  async sheets(materials: BadgeMaterial[]): Promise<StockItem[]> {
+    const records = await this.db
+      .select()
+      .from(badgeStock)
+      .orderBy(asc(badgeStock.materialId), asc(badgeStock.widthIn), asc(badgeStock.heightIn));
+    return (await this.withReservations(records)).filter(
+      (item) => includesMaterial(materials, item) && item.materialId !== "stamp-rubber",
     );
   }
 
-  async defaultBatch(material: BadgeMaterial): Promise<SheetBatch | undefined> {
-    const stock = await this.sheets(material);
-    // Start with two sheets, preferring a mix when both sizes are available.
-    const selected = stock.slice(0, 2).map((item) => ({
+  async defaultBatch(materials: BadgeMaterial[]): Promise<SheetBatch | undefined> {
+    const stock = (await this.sheets(materials)).filter((item) => item.quantity > item.reserved);
+    // Include each selected color before adding a second size of a single color.
+    const chosen = materials.flatMap((material) => {
+      const item = stock.find((entry) => includesMaterial([material], entry));
+      return item ? [item] : [];
+    });
+    if (chosen.length !== materials.length) return undefined;
+    if (materials.length === 1 && stock[1]) chosen.push(stock[1]);
+    const selected = chosen.map((item) => ({
       widthIn: item.widthIn,
       heightIn: item.heightIn,
+      material: { materialId: item.materialId, thicknessMm: item.thicknessMm },
       quantity: 1,
     }));
     const first = selected[0];
@@ -113,15 +120,20 @@ class BadgeInventory {
     return selected.length ? selected : undefined;
   }
 
-  async plan(material: BadgeMaterial, usedSheets: SheetSize[]): Promise<StockPlan> {
-    const batch = groupSheets(usedSheets.map((sheet) => ({ ...sheet, quantity: 1 })));
-    const stock = await this.sheets(material);
+  async plan(materials: BadgeMaterial[], usedSheets: CuttingSheet[]): Promise<StockPlan> {
+    const batch = resolveSheets(
+      usedSheets.map((sheet) => ({ ...sheet, quantity: 1 })),
+      materials,
+    );
+    const stock = await this.sheets(materials);
     return stockPlanSchema.parse(
       batch.map((sheet) => {
-        const item = stock.find((candidate) => sheetLabel(candidate) === sheetLabel(sheet));
+        const item = stock.find(
+          (candidate) => sheetKey({ ...candidate, material: candidate }) === sheetKey(sheet),
+        );
         if (!item || item.quantity - item.reserved < sheet.quantity)
           throw new InventoryError(
-            `The selected sheets are no longer available: ${sheet.quantity} × ${sheetLabel(sheet)} in, ${materialDescription(material)}. Change the sheets, or ask an organizer to update inventory.`,
+            `The selected sheets are no longer available: ${sheet.quantity} × ${sheetLabel(sheet)} in, ${sheet.material ? materialDescription(sheet.material) : "acrylic"}. Change the sheets, or ask an organizer to update inventory.`,
           );
         return {
           itemId: item.id,
@@ -138,12 +150,8 @@ class BadgeInventory {
 
   async reserve(review: Review): Promise<void> {
     if (
-      !review.material ||
-      !review.stockPlan?.every(
-        (sheet) =>
-          sheet.materialId === review.material?.materialId &&
-          sheet.thicknessMm === review.material.thicknessMm,
-      )
+      !reviewMaterials(review).length ||
+      !review.stockPlan?.every((sheet) => includesMaterial(reviewMaterials(review), sheet))
     )
       throw new InventoryError("Check the material inventory and arrange the badges again.");
     const plan = stockPlanSchema.parse(review.stockPlan),

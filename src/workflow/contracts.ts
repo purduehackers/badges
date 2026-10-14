@@ -10,12 +10,26 @@ export const RUBRIC_VERSION = "2026-10-12.1";
 export const MAX_SVG_BYTES = 1_000_000;
 export const MAX_BADGE_COUNT = 500;
 export const MAX_CUTTING_SHEETS = 10;
+export const badgeMaterialSchema = z.strictObject({
+  materialId: z.string().min(1).max(100),
+  thicknessMm: z.number().positive(),
+});
+export type BadgeMaterial = z.output<typeof badgeMaterialSchema>;
+export const materialIdsSchema = z
+  .array(badgeMaterialSchema.shape.materialId)
+  .min(1)
+  .max(MAX_CUTTING_SHEETS)
+  .refine((ids) => new Set(ids).size === ids.length);
 export const sheetSizeSchema = z.strictObject({
   widthIn: z.number().min(0.25).max(120),
   heightIn: z.number().min(0.25).max(120),
 });
+export const cuttingSheetSchema = sheetSizeSchema.extend({
+  // Older single-color reviews inherit their material when planning stock.
+  material: badgeMaterialSchema.optional(),
+});
 export const sheetBatchSchema = z
-  .array(sheetSizeSchema.extend({ quantity: z.int().min(1).max(MAX_CUTTING_SHEETS) }))
+  .array(cuttingSheetSchema.extend({ quantity: z.int().min(1).max(MAX_CUTTING_SHEETS) }))
   .min(1)
   .max(MAX_CUTTING_SHEETS)
   .refine(
@@ -25,6 +39,7 @@ export const sheetBatchSchema = z
     },
   );
 export type SheetSize = z.output<typeof sheetSizeSchema>;
+export type CuttingSheet = z.output<typeof cuttingSheetSchema>;
 export type SheetBatch = z.output<typeof sheetBatchSchema>;
 export const targetCountSchema = z.int().min(1).max(MAX_BADGE_COUNT);
 const id = z.string().trim().min(1).max(128);
@@ -44,11 +59,6 @@ export const settingsSchema = z.strictObject({
   stampSizeIn: z.literal(1.5),
   gapMm: z.number().min(0).max(5),
 });
-export const badgeMaterialSchema = z.strictObject({
-  materialId: z.string().min(1).max(100),
-  thicknessMm: z.number().positive(),
-});
-export type BadgeMaterial = z.output<typeof badgeMaterialSchema>;
 export const criteria = ["badge", "stamp"] as const;
 export const criterionSchema = z.enum(criteria);
 export const checkIds = ["supported", "palette", "vectors", "text", "fills", "cut"] as const;
@@ -79,7 +89,7 @@ export const layoutSchema = z
     sheets: z.array(digestSchema).min(1).max(MAX_CUTTING_SHEETS),
     // Existing stored layouts used this fixed pair, in landscape orientation.
     sheetSizes: z
-      .array(sheetSizeSchema)
+      .array(cuttingSheetSchema)
       .min(1)
       .max(MAX_CUTTING_SHEETS)
       .default([
@@ -136,7 +146,9 @@ export const reviewSchema = z.strictObject({
   stamp: assetSchema.optional(),
   event: eventSchema.optional(),
   settings: settingsSchema.optional(),
+  // Retained for stored reviews created before multiple colors were supported.
   material: badgeMaterialSchema.optional(),
+  materials: z.array(badgeMaterialSchema).min(1).max(MAX_CUTTING_SHEETS).optional(),
   sheetBatch: sheetBatchSchema.optional(),
   checks: z.array(checkSchema),
   previews: z.array(digestSchema),
@@ -194,6 +206,15 @@ export type Layout = z.output<typeof layoutSchema>;
 export type Criterion = z.output<typeof criterionSchema>;
 export type Decision = z.output<typeof decisionSchema>;
 export type StoredReview = { review: Review; version: number };
+export function reviewMaterials(review: Review): BadgeMaterial[] {
+  return review.materials ?? (review.material ? [review.material] : []);
+}
+export function includesMaterial(materials: BadgeMaterial[], material: BadgeMaterial): boolean {
+  return materials.some(
+    (selected) =>
+      selected.materialId === material.materialId && selected.thicknessMm === material.thicknessMm,
+  );
+}
 export const jobKindSchema = z.enum([
   "inspect",
   "pack",
@@ -218,7 +239,8 @@ export function contextHash(review: Review): string {
       settings: review.settings,
       fittedSizeIn: review.fittedSizeIn,
       targetCount: review.targetCount,
-      material: review.material,
+      material: reviewMaterials(review)[0],
+      ...(reviewMaterials(review).length > 1 ? { materials: reviewMaterials(review) } : {}),
       sheetBatch: review.sheetBatch,
       layout: review.selectedLayout,
       stockPlan: review.stockPlan,
@@ -238,7 +260,8 @@ export function designHash(review: Review, role: Criterion): string {
         ? {
             event: review.event,
             size: review.settings?.badgeSizeIn,
-            material: review.material,
+            material: reviewMaterials(review)[0],
+            ...(reviewMaterials(review).length > 1 ? { materials: reviewMaterials(review) } : {}),
           }
         : { shortSide: review.settings?.stampSizeIn, impression: "unmirrored" }),
     }),
@@ -277,7 +300,7 @@ export function reviewable(review: Review): boolean {
     staticPassed(review) &&
     review.event !== undefined &&
     review.settings !== undefined &&
-    review.material !== undefined &&
+    reviewMaterials(review).length > 0 &&
     review.manufacturing !== undefined
   );
 }
@@ -286,13 +309,7 @@ export function ready(review: Review): boolean {
   return (
     reviewable(review) &&
     remainingCriteria(review).length === 0 &&
-    Boolean(
-      review.stockPlan?.every(
-        (sheet) =>
-          sheet.materialId === review.material?.materialId &&
-          sheet.thicknessMm === review.material.thicknessMm,
-      ),
-    ) &&
+    Boolean(review.stockPlan?.every((sheet) => includesMaterial(reviewMaterials(review), sheet))) &&
     review.layouts.some(
       (layout) =>
         layout.id === review.selectedLayout &&

@@ -6,6 +6,7 @@ import {
   ready,
   remainingCriteria,
   reviewable,
+  reviewMaterials,
   staticPassed,
 } from "./contracts.ts";
 import type { BadgeMaterial, JobKind, Review } from "./contracts.ts";
@@ -13,7 +14,7 @@ import type { createBadgeInventory } from "./inventory.ts";
 import { physicalDimensions, physicalSvg } from "./manufacturing.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { pack } from "./packing.ts";
-import { expandSheets } from "./sheets.ts";
+import { expandSheets, resolveSheets } from "./sheets.ts";
 import { assertCurrentEvent, CmsEventChanged } from "./service.ts";
 import type { Cms } from "./service.ts";
 import { StaleReview } from "./store.ts";
@@ -43,7 +44,7 @@ function nextJobs(review: Review, kind: string): JobKind[] {
     staticPassed(review) &&
     review.event &&
     review.settings &&
-    review.material
+    reviewMaterials(review).length
   )
     return ["prepare"];
   if (
@@ -156,17 +157,17 @@ async function arrange(
     remainingCriteria(review).length ||
     !review.badge ||
     !review.settings ||
-    !review.material
+    !reviewMaterials(review).length
   )
     throw new Error("Confirm both designs before arranging them.");
   await assertCurrentEvent(review, cms);
-  const sheetBatch = review.sheetBatch ?? (await inventory?.defaultBatch(review.material));
+  const sheetBatch = review.sheetBatch ?? (await inventory?.defaultBatch(reviewMaterials(review)));
   if (!sheetBatch)
     throw new Error(
       "The selected sheets are no longer available. Add stock or choose other sheets.",
     );
-  const sheets = expandSheets(sheetBatch);
-  await inventory?.plan(review.material, sheets);
+  const sheets = expandSheets(resolveSheets(sheetBatch, reviewMaterials(review)));
+  await inventory?.plan(reviewMaterials(review), sheets);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const { layouts, shortfall } = await pack(
     source,
@@ -194,7 +195,7 @@ async function arrange(
     return { ...resized, sheetBatch, fittedSizeIn: selected.sizeIn, layouts };
   }
   const stockPlan = selected
-    ? await inventory?.plan(review.material, selected.sheetSizes)
+    ? await inventory?.plan(reviewMaterials(review), selected.sheetSizes)
     : undefined;
   return {
     ...base,
@@ -249,10 +250,12 @@ async function prepare(
     !review.badge ||
     !review.stamp ||
     !review.settings ||
-    !review.material ||
+    !reviewMaterials(review).length ||
     !staticPassed(review)
   )
     throw new Error("Check the files before preparing them.");
+  const material = reviewMaterials(review)[0];
+  if (!material) throw new Error("Choose acrylic before preparing the preview.");
   const badgeSource = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const stampSource = (await store.asset(review.stamp.hash)).bytes.toString("utf8");
   const sizeIn = badgeSize(review) ?? review.settings.badgeSizeIn;
@@ -261,7 +264,7 @@ async function prepare(
   const stamp = physicalSvg(stampSource, "stamp", 1.5, true);
   const badgeDimensions = physicalDimensions(inspectSvg(badgeSource, "badge").cut, "badge", sizeIn);
   const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cut, "stamp", 1.5);
-  const previews = await renderer(badge, impression, review.material);
+  const previews = await renderer(badge, impression, material);
   return {
     ...review,
     manufacturing: {
@@ -270,8 +273,8 @@ async function prepare(
       badgePreview: await store.putAsset(renderSvg(badge), "image/png"),
       badge3d: {
         preview: await store.putAsset(previews.badge, "image/png"),
-        material: materialDescription(review.material),
-        ...review.material,
+        material: materialDescription(material),
+        ...material,
       },
       stampPreview: await store.putAsset(previews.stamp, "image/png"),
       badgeWidthIn: badgeDimensions.widthIn,

@@ -4,7 +4,8 @@ import { XMLSerializer } from "@xmldom/xmldom";
 import type { Path } from "clipper-lib";
 
 import { hash, MAX_BADGE_COUNT } from "./contracts.ts";
-import type { Layout, Settings, SheetSize } from "./contracts.ts";
+import type { CuttingSheet, Layout, Settings, SheetSize } from "./contracts.ts";
+import { materialDescription } from "../lib/materials.ts";
 import { sheetLabel } from "./sheets.ts";
 import {
   bounds,
@@ -224,7 +225,7 @@ export async function pack(
   cut: string,
   settings: Settings,
   store: Pick<BadgeStore, "putAsset">,
-  sheets: SheetSize[],
+  sheets: CuttingSheet[],
   options: { attempt?: number; target?: number; cached?: Layout[]; fixedSize?: boolean } = {},
 ): Promise<{ layouts: Layout[]; shortfall?: { count: number; sizeIn: number } }> {
   const { attempt = 0, target, cached = [] } = options;
@@ -270,18 +271,36 @@ export async function pack(
       : await renderLayout(
           source,
           shapeAt(cut, candidate.sizeIn),
-          candidate.placements.slice(0, target),
+          selectPlacements(candidate, target),
           { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets: candidate.sheetSizes },
           store,
         );
   return { layouts: candidate.id === selected.id ? [candidate] : [candidate, selected] };
 }
 
+function selectPlacements(layout: Layout, target: number): Placement[] {
+  const byColor = new Map<string, Placement[]>();
+  for (const pose of layout.placements) {
+    const color = layout.sheetSizes[pose.sheet]?.material?.materialId ?? "";
+    const group = byColor.get(color) ?? [];
+    group.push(pose);
+    byColor.set(color, group);
+  }
+  // Share the target across selected colors, then fill from any remaining capacity.
+  const selected: Placement[] = [];
+  for (let index = 0; selected.length < target; index++)
+    for (const group of byColor.values()) {
+      const pose = group[index];
+      if (pose && selected.length < target) selected.push(pose);
+    }
+  return selected;
+}
+
 async function renderLayout(
   source: string,
   shape: Shape,
   placements: Placement[],
-  dimensions: { sizeIn: number; gapMm: number; sheets: SheetSize[] },
+  dimensions: { sizeIn: number; gapMm: number; sheets: CuttingSheet[] },
   store: Pick<BadgeStore, "putAsset">,
 ): Promise<Layout> {
   const { sizeIn, gapMm } = dimensions;
@@ -320,7 +339,7 @@ async function renderLayout(
     "image/png",
   );
   return {
-    id: hash(JSON.stringify({ sheetHashes, sizeIn, count: placements.length })),
+    id: hash(JSON.stringify({ sheetHashes, sheetSizes, sizeIn, count: placements.length })),
     sheets: sheetHashes,
     sheetSizes,
     preview,
@@ -333,17 +352,17 @@ async function renderLayout(
   };
 }
 
-function previewSvg(svgs: string[], sizes: SheetSize[]): string {
+function previewSvg(svgs: string[], sizes: CuttingSheet[]): string {
   const columns = Math.min(2, sizes.length);
   const cellWidth = Math.max(...sizes.map((size) => size.widthIn * 25.4)) + 24;
-  const cellHeight = Math.max(...sizes.map((size) => size.heightIn * 25.4)) + 40;
+  const cellHeight = Math.max(...sizes.map((size) => size.heightIn * 25.4)) + 58;
   const panels = sizes
     .map((size, index) => {
       const width = size.widthIn * 25.4,
         height = size.heightIn * 25.4;
       const x = (index % columns) * cellWidth + 12;
-      const y = Math.floor(index / columns) * cellHeight + 28;
-      return `<g transform="translate(${x} ${y})"><text y="-10" font-family="Lato" font-size="12">Sheet ${index + 1} · ${sheetLabel(size)} in</text><rect width="${width}" height="${height}" fill="white" stroke="#888"/>${svgs[index]}</g>`;
+      const y = Math.floor(index / columns) * cellHeight + 46;
+      return `<g transform="translate(${x} ${y})"><text y="-26" font-family="Lato" font-size="12">Sheet ${index + 1} · ${sheetLabel(size)} in</text><text y="-10" font-family="Lato" font-size="10">${size.material ? materialDescription(size.material) : ""}</text><rect width="${width}" height="${height}" fill="white" stroke="#888"/>${svgs[index]}</g>`;
     })
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${cellWidth * columns} ${cellHeight * Math.ceil(sizes.length / columns)}">${panels}</svg>`;

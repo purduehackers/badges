@@ -14,13 +14,14 @@ import {
   ready,
   remainingCriteria,
   reviewable,
+  reviewMaterials,
   RUBRIC_VERSION,
 } from "./contracts.ts";
 import type { Asset, BadgeEvent, JobKind, Person, Review, StoredReview } from "./contracts.ts";
 import { badgeIndex, inferEvent, singleRole } from "./intake.ts";
 import type { createBadgeInventory } from "./inventory.ts";
 import { productionSettings } from "./policy.ts";
-import { expandSheets, groupSheets } from "./sheets.ts";
+import { expandSheets, resolveSheets } from "./sheets.ts";
 import { reviewStep } from "./presentation.ts";
 import { StaleReview } from "./store.ts";
 import type { BadgeStore } from "./store.ts";
@@ -188,17 +189,25 @@ class BadgeService {
         return { next, jobs: [] };
       }
       case "material": {
-        const material = (await this.inventory.materials()).find(
-          (option) => option.materialId === action.id,
-        );
-        if (!material)
-          throw new Error("That acrylic is no longer available. Choose another material.");
-        const { sheetBatch: _sheets, ...reset } = invalidate(review);
-        const next = { ...reset, material };
+        if (!action.ids?.length) throw new Error("Choose at least one acrylic color.");
+        const available = await this.inventory.materials();
+        const materials = action.ids.map((id) => {
+          const material = available.find((option) => option.materialId === id);
+          if (!material)
+            throw new Error("That acrylic is no longer available. Choose another color.");
+          return material;
+        });
+        const { material: _material, sheetBatch: _sheets, ...reset } = invalidate(review);
+        const next = { ...reset, materials };
         return { next, jobs: inspectionJobs(next) };
       }
       case "choose-material": {
-        const { material: _material, sheetBatch: _sheets, ...next } = invalidate(review);
+        const {
+          material: _material,
+          materials: _materials,
+          sheetBatch: _sheets,
+          ...next
+        } = invalidate(review);
         return { next, jobs: [] };
       }
       case "retry": {
@@ -217,18 +226,17 @@ class BadgeService {
           at: new Date().toISOString(),
         }));
         const sheetBatch =
-          review.sheetBatch ??
-          (review.material ? await this.inventory.defaultBatch(review.material) : undefined);
+          review.sheetBatch ?? (await this.inventory.defaultBatch(reviewMaterials(review)));
         return {
           next: { ...review, sheetBatch, decisions: [...review.decisions, ...confirmed] },
           jobs: [],
         };
       }
       case "sheets": {
-        if (!action.sheets || !review.material)
+        if (!action.sheets || !reviewMaterials(review).length)
           throw new Error("Choose the sheets to use for this batch.");
-        const sheetBatch = groupSheets(action.sheets);
-        await this.inventory.plan(review.material, expandSheets(sheetBatch));
+        const sheetBatch = resolveSheets(action.sheets, reviewMaterials(review));
+        await this.inventory.plan(reviewMaterials(review), expandSheets(sheetBatch));
         const {
           layouts: _layouts,
           selectedLayout: _selected,
@@ -332,7 +340,11 @@ export function createBadgeService(
 }
 
 function inspectionJobs(review: Review): JobKind[] {
-  return review.rolesConfirmed && review.badge && review.stamp && review.event && review.material
+  return review.rolesConfirmed &&
+    review.badge &&
+    review.stamp &&
+    review.event &&
+    reviewMaterials(review).length
     ? ["inspect"]
     : [];
 }

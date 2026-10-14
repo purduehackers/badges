@@ -11,13 +11,14 @@ import {
   MAX_SVG_BYTES,
   targetCountSchema,
   sheetBatchSchema,
+  materialIdsSchema,
 } from "./contracts.ts";
 
 const commonActions = [
   z.strictObject({ kind: z.literal("roles"), badge: z.int().min(0).max(1) }),
   z.strictObject({ kind: z.literal("replace"), role: z.enum(["badge", "stamp"]) }),
   z.strictObject({ kind: z.literal("event"), id: z.string().min(1).max(128) }),
-  z.strictObject({ kind: z.literal("material"), id: z.string().min(1).max(100) }),
+  z.strictObject({ kind: z.literal("material"), ids: materialIdsSchema.optional() }),
   z.strictObject({ kind: z.literal("quantity"), count: targetCountSchema.optional() }),
   z.strictObject({ kind: z.literal("sheets"), sheets: sheetBatchSchema.optional() }),
   z.strictObject({ kind: z.literal("confirm") }),
