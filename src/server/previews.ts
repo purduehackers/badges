@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type { BadgeStore } from "../workflow/index.ts";
 import type { Asset, Review } from "../workflow/contracts.ts";
 import { fixRole, reviewStep } from "../workflow/presentation.ts";
@@ -15,6 +17,14 @@ function pair(images: string[], labels: string[], roles: string[] = []): string 
   return Buffer.from(
     new Resvg(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${images.length * 600}" height="670"><rect width="100%" height="670" fill="white"/>${parts.join("")}</svg>`,
+      {
+        font: {
+          loadSystemFonts: false,
+          fontDirs: [join(process.cwd(), "src/server/fonts")],
+          defaultFontFamily: "Lato",
+          sansSerifFamily: "Lato",
+        },
+      },
     )
       .render()
       .asPng(),
