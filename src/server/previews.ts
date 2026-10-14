@@ -75,22 +75,14 @@ export async function previewFiles(review: Review, store: BadgeStore) {
   }
   if (step === "qa" && review.manufacturing) {
     const model = review.manufacturing;
-    const hashes = [
-      model.badgePreview,
-      ...(model.badge3d ? [model.badge3d.preview] : []),
-      model.stampPreview,
-    ];
+    const hashes = [model.badge3d?.preview ?? model.badgePreview, model.stampPreview];
     const images = await Promise.all(
       hashes.map(async (digest) => (await store.asset(digest)).bytes.toString("base64")),
     );
     return [
       {
         name: "quality-check.png",
-        data: pair(images, [
-          review.badge?.name ?? "Badge",
-          ...(model.badge3d ? ["Selected acrylic"] : []),
-          review.stamp?.name ?? "Stamp",
-        ]),
+        data: pair(images, [review.badge?.name ?? "Badge", review.stamp?.name ?? "Stamp"]),
       },
     ];
   }
