@@ -10,7 +10,6 @@ import {
   contextHash,
   designHash,
   invalidate,
-  MAX_SVG_BYTES,
   ready,
   remainingCriteria,
   reviewable,
@@ -100,12 +99,8 @@ class BadgeService {
       assertUnlocked(previous.review);
     }
     const attachments = payload.attachments ?? [];
-    if (
-      attachments.length < 1 ||
-      attachments.length > 2 ||
-      attachments.some((a) => a.size > MAX_SVG_BYTES)
-    )
-      throw new Error("Attach one or two SVG files, under 1 MB each.");
+    if (attachments.length < 1 || attachments.length > 2)
+      throw new Error("Attach one or two SVG files.");
     const uploads: Asset[] = [];
     for (const file of attachments) uploads.push(await this.asset(file.url, file.filename));
     const event = inferEvent(payload, await this.cms.events(), previous?.review.event);
@@ -489,19 +484,5 @@ async function downloadSvg(value: string): Promise<string> {
   const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15_000) });
   if (!response.ok || !response.body)
     throw new Error("Attachment is unavailable. Reattach the SVG.");
-  const reader = response.body.getReader(),
-    chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const part = await reader.read();
-      if (part.done) break;
-      size += part.value.byteLength;
-      if (size > MAX_SVG_BYTES) throw new Error("SVG exceeds 1 MB.");
-      chunks.push(part.value);
-    }
-  } finally {
-    await reader.cancel();
-  }
-  return Buffer.concat(chunks).toString("utf8");
+  return response.text();
 }

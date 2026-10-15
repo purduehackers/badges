@@ -3,7 +3,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { Element } from "@xmldom/xmldom";
 import svgpath from "svgpath";
 
-import { checkIds, hash, MAX_SVG_BYTES } from "./contracts.ts";
+import { checkIds, hash } from "./contracts.ts";
 import type { Check } from "./contracts.ts";
 import { assertSimple, flatten } from "./geometry.ts";
 
@@ -71,8 +71,8 @@ const allowedStyles = new Set([
 
 export function parseSvg(input: string) {
   const source = input.replace(/^\s*<\?xml\s[^?]*\?>/u, "");
-  if (Buffer.byteLength(source) > MAX_SVG_BYTES || /<!DOCTYPE|<!ENTITY|<\?/iu.test(source)) {
-    throw new Error("Export a plain SVG under 1 MB, without XML directives or entities.");
+  if (/<!DOCTYPE|<!ENTITY|<\?/iu.test(source)) {
+    throw new Error("Export a plain SVG without XML directives or entities.");
   }
   const document = new DOMParser({
     onError: (level, detail) => {

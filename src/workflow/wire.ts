@@ -7,7 +7,6 @@ import {
   personSchema,
   reviewSchema,
   criteria,
-  MAX_SVG_BYTES,
   targetCountSchema,
   sheetBatchSchema,
 } from "./contracts.ts";
@@ -36,7 +35,7 @@ export const actionSchema = z.discriminatedUnion("kind", [
       .strictObject({
         url: z.url(),
         filename: z.string().max(256),
-        size: z.int().positive().max(MAX_SVG_BYTES),
+        size: z.int().positive(),
       })
       .optional(),
   }),

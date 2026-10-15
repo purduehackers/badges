@@ -58,8 +58,6 @@ class BadgeRepository {
     return { bytes: Buffer.from(asset.data, "base64"), mediaType: asset.mediaType };
   }
   async putAsset(bytes: Uint8Array, mediaType: string) {
-    if (bytes.byteLength > 3_000_000)
-      throw new Error("Generated artifact exceeds the storage limit.");
     const digest = hash(bytes);
     await this.db
       .insert(badgeAssets)

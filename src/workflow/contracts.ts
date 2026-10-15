@@ -7,7 +7,6 @@ export const BADGES_CHANNEL_ID = z
   .regex(/^\d{17,20}$/u)
   .parse(process.env.BADGES_CHANNEL_ID || "1418162647005790342");
 export const RUBRIC_VERSION = "2026-10-12.1";
-export const MAX_SVG_BYTES = 1_000_000;
 export const MAX_BADGE_COUNT = 500;
 export const MAX_CUTTING_SHEETS = 10;
 export const badgeMaterialSchema = z.strictObject({
