@@ -88,8 +88,6 @@ export function failureGuidance(detail: string): string {
     return "The Hack Night details or design size changed. Select Check again to continue.";
   if (/Attachment is unavailable|Reattach|expired/iu.test(detail))
     return "I couldn’t open that upload. Upload the SVG again.";
-  if (/1 MB|too large/iu.test(detail))
-    return "Your file exceeds 1 MB. Reduce its size in your design app, then upload it again.";
   if (/Attach one|Upload one/iu.test(detail)) return "Upload your badge or stamp as an SVG.";
   if (/raster|external|image element/iu.test(detail))
     return "Use vector artwork instead of pasted images, then export a new SVG.";
