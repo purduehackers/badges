@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { personSchema } from "./contracts.ts";
+import { MAX_CUTTING_SHEETS, personSchema } from "./contracts.ts";
 import { materialLabel, stockMaterial, thicknessLabel } from "../lib/materials.ts";
 
 export const materialIdSchema = z.string().refine((id) => stockMaterial(id) !== undefined, {
@@ -20,6 +20,18 @@ export const stockItemSchema = stockSpecSchema.extend({
   reserved: quantity.default(0),
   updatedAt: z.int().nonnegative(),
 });
+export const stockSelectionSchema = z
+  .array(
+    z.strictObject({
+      itemId: stockItemSchema.shape.id,
+      quantity: z.int().min(1).max(MAX_CUTTING_SHEETS),
+    }),
+  )
+  .min(1)
+  .max(MAX_CUTTING_SHEETS)
+  .refine((items) => new Set(items.map((item) => item.itemId)).size === items.length)
+  .refine((items) => items.reduce((total, item) => total + item.quantity, 0) <= MAX_CUTTING_SHEETS);
+export type StockSelection = z.output<typeof stockSelectionSchema>;
 const note = z.string().trim().max(200).default("");
 export const inventoryActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("list"), page: z.int().min(1).default(1) }),

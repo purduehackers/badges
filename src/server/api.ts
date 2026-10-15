@@ -28,12 +28,12 @@ async function control(input: z.output<typeof actionRequest>, mutate: boolean) {
         )
       : await service.validate(input.id, input.version, input.actor, input.action);
     const availableSheets =
-      !mutate && input.action.kind === "sheets"
-        ? await inventory.sheets(reviewMaterials(stored.review))
-        : undefined;
-    const materials =
-      !mutate && input.action.kind === "material" ? await inventory.materials() : undefined;
-    return Response.json({ ...stored, availableSheets, materials });
+      !mutate && input.action.kind === "material"
+        ? await inventory.acrylic()
+        : !mutate && input.action.kind === "sheets"
+          ? await inventory.sheets(reviewMaterials(stored.review))
+          : undefined;
+    return Response.json({ ...stored, availableSheets });
   } catch (cause) {
     const current = await store.get(input.id);
     const url =
@@ -59,7 +59,8 @@ async function work(origin: string) {
         card: {
           ...stored,
           events: reviewStep(stored.review) === "event" ? await cms.events() : [],
-          materials: reviewStep(stored.review) === "material" ? await inventory.materials() : [],
+          availableSheets:
+            reviewStep(stored.review) === "material" ? await inventory.acrylic() : [],
           files: await previewFiles(stored.review, store),
           identifiedFile: await identifiedPreview(stored.review, store),
           viewerUrl: viewerUrl(stored.review, origin),
