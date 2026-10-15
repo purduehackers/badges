@@ -183,7 +183,7 @@ export function reviewPrompt(review: Review): string {
     case "upload":
       return `Attach your updated ${review.pendingRole} SVG in this thread.`;
     case "material":
-      return "Choose one or more acrylic colors. The preview will use one of your selected colors.";
+      return "Choose the acrylic sheets you want to use from inventory.";
     case "checking":
       return "Checking your files…";
     case "fix": {

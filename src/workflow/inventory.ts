@@ -8,15 +8,20 @@ import { and, asc, count, desc, eq, gt } from "drizzle-orm";
 import { includesMaterial, reviewMaterials, stockPlanSchema } from "./contracts.ts";
 import type { BadgeMaterial, CuttingSheet, Review, SheetBatch, StockPlan } from "./contracts.ts";
 import { resolveSheets, sheetKey, sheetLabel } from "./sheets.ts";
-import { stockChangeSchema, stockItemSchema, stockLabel } from "./inventory-contracts.ts";
+import {
+  stockChangeSchema,
+  stockItemSchema,
+  stockLabel,
+  stockSelectionSchema,
+} from "./inventory-contracts.ts";
 import type {
   InventoryRequest,
   InventoryResponse,
   StockItem,
   StockSpec,
+  StockSelection,
 } from "./inventory-contracts.ts";
 import { ACRYLIC_MATERIALS, materialDescription } from "../lib/materials.ts";
-import { ACRYLIC_THICKNESS_MM } from "./policy.ts";
 
 const PAGE_SIZE = 10;
 type Mutation = Extract<InventoryRequest["action"], { kind: "add" | "use" | "set" }>;
@@ -77,16 +82,30 @@ class BadgeInventory {
     );
   }
 
-  async materials(): Promise<BadgeMaterial[]> {
-    const stock = await this.available();
-    return ACRYLIC_MATERIALS.filter((material) =>
-      stock.some(
-        (item) =>
-          item.materialId === material.id &&
-          item.thicknessMm === ACRYLIC_THICKNESS_MM &&
-          item.quantity > item.reserved,
-      ),
-    ).map((material) => ({ materialId: material.id, thicknessMm: ACRYLIC_THICKNESS_MM }));
+  async acrylic(): Promise<StockItem[]> {
+    return (await this.available()).filter(
+      (item) =>
+        item.quantity > item.reserved &&
+        ACRYLIC_MATERIALS.some((material) => material.id === item.materialId),
+    );
+  }
+
+  async selectSheets(
+    selection: StockSelection,
+  ): Promise<{ materials: BadgeMaterial[]; sheetBatch: SheetBatch }> {
+    const stock = await this.acrylic();
+    const materials: BadgeMaterial[] = [];
+    const sheetBatch = stockSelectionSchema.parse(selection).map(({ itemId, quantity }) => {
+      const item = stock.find((candidate) => candidate.id === itemId);
+      if (!item || quantity > item.quantity - item.reserved)
+        throw new InventoryError(
+          "Those sheets are no longer available. Reopen Choose acrylic to see current stock.",
+        );
+      const material = { materialId: item.materialId, thicknessMm: item.thicknessMm };
+      if (!includesMaterial(materials, material)) materials.push(material);
+      return { material, widthIn: item.widthIn, heightIn: item.heightIn, quantity };
+    });
+    return { materials, sheetBatch };
   }
 
   async sheets(materials: BadgeMaterial[]): Promise<StockItem[]> {

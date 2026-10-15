@@ -15,11 +15,6 @@ export const badgeMaterialSchema = z.strictObject({
   thicknessMm: z.number().positive(),
 });
 export type BadgeMaterial = z.output<typeof badgeMaterialSchema>;
-export const materialIdsSchema = z
-  .array(badgeMaterialSchema.shape.materialId)
-  .min(1)
-  .max(MAX_CUTTING_SHEETS)
-  .refine((ids) => new Set(ids).size === ids.length);
 export const sheetSizeSchema = z.strictObject({
   widthIn: z.number().min(0.25).max(120),
   heightIn: z.number().min(0.25).max(120),

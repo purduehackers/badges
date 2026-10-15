@@ -3,7 +3,6 @@ import { createHmac } from "node:crypto";
 import { z } from "zod";
 
 import {
-  badgeMaterialSchema,
   eventSchema,
   personSchema,
   reviewSchema,
@@ -11,14 +10,14 @@ import {
   MAX_SVG_BYTES,
   targetCountSchema,
   sheetBatchSchema,
-  materialIdsSchema,
 } from "./contracts.ts";
+import { stockItemSchema, stockSelectionSchema } from "./inventory-contracts.ts";
 
 const commonActions = [
   z.strictObject({ kind: z.literal("roles"), badge: z.int().min(0).max(1) }),
   z.strictObject({ kind: z.literal("replace"), role: z.enum(["badge", "stamp"]) }),
   z.strictObject({ kind: z.literal("event"), id: z.string().min(1).max(128) }),
-  z.strictObject({ kind: z.literal("material"), ids: materialIdsSchema.optional() }),
+  z.strictObject({ kind: z.literal("material"), items: stockSelectionSchema.optional() }),
   z.strictObject({ kind: z.literal("quantity"), count: targetCountSchema.optional() }),
   z.strictObject({ kind: z.literal("sheets"), sheets: sheetBatchSchema.optional() }),
   z.strictObject({ kind: z.literal("confirm") }),
@@ -80,7 +79,7 @@ export const cardSchema = z.strictObject({
   review: reviewSchema,
   version: z.int(),
   events: z.array(eventSchema),
-  materials: z.array(badgeMaterialSchema).default([]),
+  availableSheets: z.array(stockItemSchema).default([]),
   files: z.array(previewFileSchema).max(1),
   identifiedFile: previewFileSchema.optional(),
   viewerUrl: z.url().optional(),

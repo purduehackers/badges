@@ -67,12 +67,15 @@ class BadgeService {
   private readonly cms: Cms;
   private readonly inventory: Pick<
     ReturnType<typeof createBadgeInventory>,
-    "materials" | "defaultBatch" | "plan"
+    "selectSheets" | "defaultBatch" | "plan"
   >;
   constructor(
     repository: BadgeStore,
     cms: Cms,
-    inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials" | "defaultBatch" | "plan">,
+    inventory: Pick<
+      ReturnType<typeof createBadgeInventory>,
+      "selectSheets" | "defaultBatch" | "plan"
+    >,
   ) {
     this.repository = repository;
     this.cms = cms;
@@ -189,16 +192,10 @@ class BadgeService {
         return { next, jobs: [] };
       }
       case "material": {
-        if (!action.ids?.length) throw new Error("Choose at least one acrylic color.");
-        const available = await this.inventory.materials();
-        const materials = action.ids.map((id) => {
-          const material = available.find((option) => option.materialId === id);
-          if (!material)
-            throw new Error("That acrylic is no longer available. Choose another color.");
-          return material;
-        });
+        if (!action.items?.length) throw new Error("Choose at least one acrylic sheet.");
+        const selection = await this.inventory.selectSheets(action.items);
         const { material: _material, sheetBatch: _sheets, ...reset } = invalidate(review);
-        const next = { ...reset, materials };
+        const next = { ...reset, ...selection };
         return { next, jobs: inspectionJobs(next) };
       }
       case "choose-material": {
@@ -334,7 +331,10 @@ class BadgeService {
 export function createBadgeService(
   repository: BadgeStore,
   cms: Cms,
-  inventory: Pick<ReturnType<typeof createBadgeInventory>, "materials" | "defaultBatch" | "plan">,
+  inventory: Pick<
+    ReturnType<typeof createBadgeInventory>,
+    "selectSheets" | "defaultBatch" | "plan"
+  >,
 ) {
   return new BadgeService(repository, cms, inventory);
 }

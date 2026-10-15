@@ -62,7 +62,7 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
     ]);
   if (step === "event") candidates.push(["select_event", { kind: "event", id: "candidate" }]);
   if (["material", "qa", "fix"].includes(step))
-    candidates.push(["select_material", { kind: "material", ids: ["candidate"] }]);
+    candidates.push(["select_material", { kind: "material" }]);
   if (step === "qa") candidates.push(["confirm_design", { kind: "confirm" }]);
   if (["files", "missing", "upload", "fix", "qa", "quantity", "layout", "done"].includes(step))
     candidates.push(["request_replacement", { kind: "upload", role: "badge" }]);
@@ -97,6 +97,11 @@ export async function reviewStatus(context: Context) {
   if (!stored) return { tools, next: "Attach your badge and stamp SVGs." };
   const { review, version } = stored;
   const step = reviewStep(review);
+  const stock = tools.includes("select_material")
+    ? await runtime().inventory.acrylic()
+    : tools.includes("set_sheets")
+      ? await runtime().inventory.sheets(reviewMaterials(review))
+      : undefined;
   return {
     tools,
     version,
@@ -114,9 +119,6 @@ export async function reviewStatus(context: Context) {
       filename: asset.name,
     })),
     events: step === "event" ? await cms.events() : undefined,
-    materials: ["material", "qa", "fix"].includes(step)
-      ? await runtime().inventory.materials()
-      : undefined,
     checks: {
       passed: staticPassed(review),
       badge: verificationChecks(review, "badge"),
@@ -125,16 +127,14 @@ export async function reviewStatus(context: Context) {
     remainingConfirmations: remainingCriteria(review),
     quantity: review.targetCount,
     sheets: review.sheetBatch,
-    availableSheets:
-      tools.includes("set_sheets") && reviewMaterials(review).length
-        ? (await runtime().inventory.sheets(reviewMaterials(review))).map((item) => ({
-            material: { materialId: item.materialId, thicknessMm: item.thicknessMm },
-            label: materialDescription(item),
-            widthIn: item.widthIn,
-            heightIn: item.heightIn,
-            quantity: item.quantity - item.reserved,
-          }))
-        : undefined,
+    availableSheets: stock?.map((item) => ({
+      itemId: item.id,
+      material: { materialId: item.materialId, thicknessMm: item.thicknessMm },
+      label: materialDescription(item),
+      widthIn: item.widthIn,
+      heightIn: item.heightIn,
+      quantity: Math.max(0, item.quantity - item.reserved),
+    })),
     sizeIn: badgeSize(review),
     quantityShortfall: review.quantityShortfall,
     failure: review.failure ? failureGuidance(review.failure) : undefined,
@@ -184,8 +184,8 @@ export async function executeTool(request: z.output<typeof toolRequestSchema>) {
       action = { kind: "event", id: badgeTools.select_event.schema.parse(input).id };
       break;
     case "select_material": {
-      const { ids } = badgeTools.select_material.schema.parse(input);
-      action = ids ? { kind: "material", ids } : { kind: "choose-material" };
+      const { items } = badgeTools.select_material.schema.parse(input);
+      action = items ? { kind: "material", items } : { kind: "choose-material" };
       break;
     }
     case "confirm_design":
