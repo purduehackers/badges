@@ -4,6 +4,8 @@
 
 The supplied Swagger snapshot identifies the API on `https://localhost:5001`, with its schema at `/swagger/1.0-OpenApi/swagger.json`. The Ruby dashboard uses port 2402; the remote-access certificate is served on port 5000. The snapshot lists operations but contains no request or response schemas, so the diagnostic must retrieve the live schema before we implement mutations.
 
+The October 22 BIDC browser report collected that schema with HTTP 200 and received readable HTTP 401 responses for all six authenticated reads. Direct browser access works on that computer. The live schema specifies `Authorization: PersonalAccessToken <token>`; the original collector sent Bearer instead. Both collectors now default to PersonalAccessToken and accept a pasted token with or without its prefix. A new BIDC report is still needed to verify authenticated access and collect the device, profiles, and jobs.
+
 ## What we collect
 
 - OpenAPI schemas, including upload, profile, workbench, queue, and error contracts.

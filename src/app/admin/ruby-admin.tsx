@@ -25,7 +25,7 @@ const checks = [
 export default function RubyAdmin() {
   const [baseUrl, setBaseUrl] = useState("https://localhost:5001");
   const [token, setToken] = useState("");
-  const [format, setFormat] = useState<"bearer" | "raw">("bearer");
+  const [format, setFormat] = useState<RubyReport["auth"]["format"]>("personal-access-token");
   const [notes, setNotes] = useState("");
   const [report, setReport] = useState<RubyReport>();
   const [running, setRunning] = useState(false);
@@ -42,7 +42,8 @@ export default function RubyAdmin() {
 
   const completed = report?.checks.filter((check) => check.state === "collected").length ?? 0;
   const blocked = report?.checks.some((check) => check.state === "blocked");
-  const exportData = () => redact({ ...report, notes }, token.trim().replace(/^Bearer\s+/i, ""));
+  const exportData = () =>
+    redact({ ...report, notes }, token.trim().replace(/^(?:PersonalAccessToken|Bearer)\s+/i, ""));
 
   async function run(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -157,8 +158,15 @@ export default function RubyAdmin() {
                 <select
                   id="ruby-auth"
                   value={format}
-                  onChange={(e) => setFormat(e.target.value === "raw" ? "raw" : "bearer")}
+                  onChange={(e) =>
+                    setFormat(
+                      e.target.value === "raw" || e.target.value === "bearer"
+                        ? e.target.value
+                        : "personal-access-token",
+                    )
+                  }
                 >
+                  <option value="personal-access-token">PersonalAccessToken (Ruby default)</option>
                   <option value="bearer">Bearer token</option>
                   <option value="raw">Raw token</option>
                 </select>
