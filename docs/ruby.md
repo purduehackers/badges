@@ -6,12 +6,14 @@ The supplied Swagger snapshot identifies the API on `https://localhost:5001`, wi
 
 The October 22 BIDC reports establish that direct browser access and PersonalAccessToken authentication work. Design and workbench reads succeed. Without a target-device header, profiles returned an empty list, the queue returned HTTP 204, and device/job status returned HTTP 400 with `ERR_QUEUE_000`. The operator confirmed that the laser was on and connected in Ruby's UI.
 
-Trotec's official [Smart Add-on](https://chromewebstore.google.com/detail/trotec-ruby-smart-add-on/mbfamlpjhmahobdfniiadkibhlefeggh) version 1.0.1 confirms the request headers in `src/service-worker/open-api.js`: `Authorization: PersonalAccessToken <token>`, `x-api-version: 1.0-OpenApi`, and `x-target-device: <serial number>`. Its English messages define `ERR_QUEUE_000` as "No device." Both collectors now accept the serial number and send these headers on API reads. A targeted BIDC run is still needed; an empty profile list without the target does not prove no profiles exist.
+Trotec's official [Smart Add-on](https://chromewebstore.google.com/detail/trotec-ruby-smart-add-on/mbfamlpjhmahobdfniiadkibhlefeggh) version 1.0.1 confirms the request headers in `src/service-worker/open-api.js`: `Authorization: PersonalAccessToken <token>`, `x-api-version: 1.0-OpenApi`, and `x-target-device: <serial number>`. Its English messages define `ERR_QUEUE_000` as "No device." Both collectors accept the serial number and target device, profile, and queue reads. Design and workbench lists omit the target header because their schema does not declare it.
+
+The targeted October 22 report identifies a Speedy 400 Flexx and returns its active job, progress, and 13 queue entries. Browser access, authentication, and device selection are verified. Profiles still return an empty list; check the API user's Profiles menu before deciding whether profiles must be created. Designs and workbenches also returned empty lists after the headers changed; the cause is not established. `GetJobsStatus` returned `ERR_TN_002` when called without its `trackingNumber` query parameter. The setup collector no longer calls this endpoint; tracked-job status belongs after an import with a known tracking number.
 
 ## What we collect
 
 - OpenAPI schemas, including upload, profile, workbench, queue, and error contracts.
-- `GetDeviceStatus`, `GetImportProfiles`, `GetDesigns`, `GetWorkbenches`, `GetQueueElements`, and `GetJobsStatus` JSON responses.
+- `GetDeviceStatus`, `GetImportProfiles`, `GetDesigns`, `GetWorkbenches`, and `GetQueueElements` JSON responses.
 - HTTP status, Ruby error codes, target serial number, elapsed time, browser origin/version, and failures. Each request has a 15-second timeout and an 8 MB response bound. Collections are a single API response, not an exhaustive crawl. HTTP 204 means no response content; it does not establish that a laser is connected or its queue is empty.
 - Optional operator notes identifying known working acrylic and stamp profiles.
 
@@ -33,7 +35,7 @@ flowchart LR
   F --> G[Operator checks setup and starts laser in Ruby]
 ```
 
-1. Confirm device and profile reads with an explicit target serial number. Browser access and authentication already work; a connector is not currently needed.
+1. Inspect the API user's Profiles menu and confirm the intended profiles are returned. Browser access, authentication, device status, and queue reads already work; a connector is not currently needed.
 2. Map each acrylic type/thickness and stamp rubber to a known working profile. The public API only returns profile IDs, names, and material names; design/workbench lists similarly omit dimensions and processing settings. Obtain a profile export or inspect the configuration in Ruby. Profiles are separate from the material database and specify laser, material, scaling, positioning, and whether to save or queue the job. Preserve millimetre dimensions and the stamp's existing manufacturing mirroring; do not apply a second mirror or infer power/speed from a preview.
 3. Import one agreed test sheet and inspect its dimensions and settings in Ruby. `Upload` accepts multipart `uploadedFile`; `UploadFromMany` accepts multipart `uploadedFiles` and an explicit target. Both take `importProfileId` and `trackingNumber` query parameters and return no useful IDs. Recover created items using the tracking number. A profile may queue during import; check its processing steps and resulting queue before issuing `EnqueueWorkbench` (a JSON array of workbench IDs). These are later mutation tests, not part of diagnostics.
 4. Queue each sheet once, using a durable key derived from the published asset hash, sheet identity, profile, and configuration. Record Ruby IDs before retrying. Recover partial imports by reading existing items instead of blindly creating duplicates.

@@ -68,7 +68,7 @@ function Protect-Data($value) {
     return $value
 }
 
-function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true) {
+function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true, $targeted = $false) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $result = [ordered]@{ name = $name; path = $path; method = $method }
     $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($method), "$base$path")
@@ -77,12 +77,12 @@ function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true) {
     if ($method -eq 'OPTIONS') {
         $request.Headers.TryAddWithoutValidation('Access-Control-Request-Method', 'GET') | Out-Null
         $preflightHeaders = 'authorization,x-api-version'
-        if ($targetDevice) { $preflightHeaders += ',x-target-device' }
+        if ($targeted -and $targetDevice) { $preflightHeaders += ',x-target-device' }
         $request.Headers.TryAddWithoutValidation('Access-Control-Request-Headers', $preflightHeaders) | Out-Null
     } else {
         if ($path.StartsWith('/api/OpenApi/')) {
             $request.Headers.TryAddWithoutValidation('x-api-version', '1.0-OpenApi') | Out-Null
-            if ($targetDevice) { $request.Headers.TryAddWithoutValidation('x-target-device', $targetDevice) | Out-Null }
+            if ($targeted -and $targetDevice) { $request.Headers.TryAddWithoutValidation('x-target-device', $targetDevice) | Out-Null }
         }
         if ($authenticated -and $token) {
             $request.Headers.TryAddWithoutValidation('Authorization', $authValue) | Out-Null
@@ -102,13 +102,21 @@ function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true) {
         $result.headers = $headers
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         if ($body -and $method -ne 'OPTIONS') {
-            try { $result.data = Protect-Data (ConvertFrom-Json $body) }
+            try {
+                if ($body.TrimStart().StartsWith('[')) {
+                    $result.data = Protect-Data @(ConvertFrom-Json $body)
+                } else {
+                    $result.data = Protect-Data (ConvertFrom-Json $body)
+                }
+            }
             catch { $result.state = 'error'; $result.error = 'Response was not JSON. Check the API address and port.' }
         }
         if ($result.data -and $result.data.code -eq 'ERR_QUEUE_000') {
             $result.detail = 'Ruby returned No device (ERR_QUEUE_000). Check the laser serial number and connection in Ruby.'
         } elseif ($result.status -eq 204) {
             $result.detail = 'Ruby returned no content.'
+        } elseif ($path -eq '/api/OpenApi/GetImportProfiles' -and $result.status -eq 200 -and $result.data -is [array] -and $result.data.Count -eq 0) {
+            $result.detail = 'No import profiles are visible to this API user. Check Ruby Profiles; saved materials alone are not import profiles.'
         }
         Write-Host "$name : HTTP $($result.status)"
     } catch {
@@ -130,15 +138,14 @@ try {
         $schema = Read-Ruby 'API schema' '/swagger/1.0-OpenApi/swagger.json' 'GET' $true
     }
     $checks.Add($schema)
-    $checks.Add((Read-Ruby 'CORS preflight' '/api/OpenApi/GetDeviceStatus' 'OPTIONS' $false))
+    $checks.Add((Read-Ruby 'CORS preflight' '/api/OpenApi/GetDeviceStatus' 'OPTIONS' $false $true))
     foreach ($entry in @(
-        @('Device', 'GetDeviceStatus'),
-        @('Import profiles', 'GetImportProfiles'),
-        @('Designs', 'GetDesigns'),
-        @('Workbenches', 'GetWorkbenches'),
-        @('Queue', 'GetQueueElements'),
-        @('Job status', 'GetJobsStatus')
-    )) { $checks.Add((Read-Ruby $entry[0] "/api/OpenApi/$($entry[1])")) }
+        @('Device', 'GetDeviceStatus', $true),
+        @('Import profiles', 'GetImportProfiles', $true),
+        @('Designs', 'GetDesigns', $false),
+        @('Workbenches', 'GetWorkbenches', $false),
+        @('Queue', 'GetQueueElements', $true)
+    )) { $checks.Add((Read-Ruby $entry[0] "/api/OpenApi/$($entry[1])" 'GET' $true $entry[2])) }
 
     $report = [ordered]@{
         version = 1
