@@ -1,0 +1,419 @@
+.ruby-admin {
+  --line: #292b31;
+  --muted: #9a9da8;
+  --accent: #dcff8a;
+  max-width: 1140px;
+  margin: auto;
+  padding: 0 32px;
+  color: #f1f2f4;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+.ruby-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+}
+.ruby-nav span,
+.ruby-muted,
+.ruby-help {
+  color: var(--muted);
+}
+.ruby-tag {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.ruby-header {
+  padding: 64px 0 40px;
+}
+.ruby-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  font-weight: 600;
+}
+.ruby-header h1 {
+  font-size: clamp(38px, 5vw, 58px);
+  line-height: 1.07;
+  letter-spacing: -0.045em;
+  font-weight: 550;
+  margin: 18px 0;
+}
+.ruby-header > p {
+  max-width: 570px;
+  color: #b8bbc5;
+  font-size: 17px;
+  line-height: 1.6;
+}
+.ruby-mode {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 26px;
+  font-size: 12px;
+  color: var(--accent);
+  flex-wrap: wrap;
+}
+.ruby-mode > span:first-child {
+  height: 6px;
+  width: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ruby-mode-note {
+  color: var(--muted);
+  margin-left: 8px;
+}
+.ruby-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.12fr;
+  gap: 20px;
+  align-items: start;
+}
+.ruby-panel {
+  background: #111215;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 26px;
+}
+.ruby-section-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.ruby-number {
+  font:
+    11px var(--font-geist-mono),
+    monospace;
+  color: var(--muted);
+  border: 1px solid #373a43;
+  padding: 4px 5px;
+  border-radius: 4px;
+}
+.ruby-admin h2 {
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+}
+.ruby-admin p {
+  line-height: 1.55;
+}
+.ruby-muted {
+  font-size: 13px;
+}
+.ruby-admin fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.ruby-admin label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin: 24px 0 8px;
+}
+.ruby-admin label span {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ruby-admin input,
+.ruby-admin select,
+.ruby-admin textarea {
+  display: block;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #343741;
+  border-radius: 7px;
+  font-size: 14px;
+  background: #0b0c0e;
+  color: #ededed;
+  outline: none;
+}
+.ruby-admin input:focus,
+.ruby-admin select:focus,
+.ruby-admin textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px #dcff8a15;
+}
+.ruby-admin textarea {
+  resize: vertical;
+}
+.ruby-help {
+  font-size: 11px;
+  margin-top: 9px;
+}
+.ruby-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ruby-presets button {
+  font-size: 11px !important;
+  padding: 6px 9px !important;
+  color: #b8bbc5;
+}
+.ruby-admin button,
+.ruby-button {
+  cursor: pointer;
+  border: 1px solid #393c45;
+  border-radius: 7px;
+  padding: 10px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #1a1c21;
+  text-align: center;
+  transition: background 0.15s;
+}
+.ruby-admin button:hover,
+.ruby-button:hover {
+  background: #2a2d35;
+}
+.ruby-admin button:focus-visible,
+.ruby-admin a:focus-visible,
+.ruby-admin summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.ruby-admin button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ruby-admin .ruby-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #17200b;
+}
+.ruby-admin .ruby-primary:hover:not(:disabled) {
+  background: #edffc1;
+}
+.ruby-primary span {
+  margin-left: 28px;
+}
+.ruby-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 22px 0 12px;
+}
+.ruby-advanced {
+  margin-top: 20px;
+  font-size: 12px;
+}
+.ruby-admin summary {
+  cursor: pointer;
+  color: #b5b9c3;
+  font-size: 12px;
+}
+.ruby-admin summary:hover {
+  color: white;
+}
+.ruby-text-link {
+  font-size: 12px;
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+}
+.ruby-error {
+  margin-top: 16px;
+  color: #ffb4a8;
+  font-size: 13px;
+}
+.ruby-count {
+  margin-left: auto;
+  font:
+    12px var(--font-geist-mono),
+    monospace;
+  color: var(--muted);
+}
+.ruby-checks {
+  margin-top: 18px;
+}
+.ruby-check {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 23px minmax(0, 1fr);
+  gap: 11px;
+}
+.ruby-check:last-child {
+  padding-bottom: 0;
+}
+.ruby-check-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid #33363e;
+  color: #70747e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.ruby-check-icon.collected {
+  background: #203120;
+  color: #b2e8a0;
+  border-color: #36502b;
+}
+.ruby-check-icon.blocked,
+.ruby-check-icon.needs-input {
+  background: #342b17;
+  color: #f1d180;
+  border-color: #635128;
+}
+.ruby-check-icon.error {
+  color: #ffb4a8;
+  border-color: #73372b;
+}
+.ruby-check-icon.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ruby-check-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.ruby-check h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.ruby-check-title > span {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.ruby-check p {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.ruby-check details {
+  margin-top: 10px;
+}
+.ruby-check pre {
+  max-height: 230px;
+  overflow: auto;
+  font-size: 10px;
+  padding: 12px;
+  margin-top: 8px;
+  background: #070809;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ruby-fallback {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px 35px;
+  margin-top: 20px;
+  align-items: center;
+}
+.ruby-fallback h2 {
+  font-size: 15px;
+}
+.ruby-fallback p,
+.ruby-fallback li {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.ruby-fallback details {
+  grid-column: 1 / -1;
+}
+.ruby-fallback ol {
+  list-style: decimal;
+  padding-left: 20px;
+}
+.ruby-fallback code {
+  color: #e2e4e9;
+}
+.ruby-attention {
+  border-color: #776336;
+}
+.ruby-export {
+  margin-top: 20px;
+}
+.ruby-export label {
+  margin-top: 18px;
+}
+.ruby-next {
+  margin: 64px 0 56px;
+  max-width: 900px;
+}
+.ruby-next h2 {
+  margin: 14px 0 20px;
+  font-size: 26px;
+}
+.ruby-next > p {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 750px;
+}
+.ruby-next > .ruby-help {
+  font-size: 11px;
+}
+.ruby-pipeline {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+.ruby-pipeline span {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+}
+.ruby-pipeline b {
+  color: #696e7a;
+  font-weight: 400;
+}
+.ruby-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .ruby-admin {
+    padding: 0 20px;
+  }
+  .ruby-grid {
+    grid-template-columns: 1fr;
+  }
+  .ruby-header {
+    padding-top: 40px;
+  }
+  .ruby-panel {
+    padding: 21px;
+  }
+  .ruby-fallback {
+    grid-template-columns: 1fr;
+  }
+  .ruby-fallback .ruby-button {
+    justify-self: start;
+  }
+  .ruby-mode-note {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .ruby-footer {
+    flex-direction: column;
+  }
+}

@@ -12,5 +12,6 @@ Use these pages to understand or run the project:
 - **Workflow**: [Understand the designer and manufacturer steps](docs/workflow.md)
 - **Service setup**: [Configure the badge service](docs/service.md)
 - **Saved assets**: [Download published badge designs](https://github.com/purduehackers/badge-designs)
+- **Laser setup**: [Collect Ruby diagnostics at /admin](https://badges.purduehackers.com/admin) · [Integration plan](docs/ruby.md)
 
 The Next.js app previews local Scalable Vector Graphics (SVG) files. The service renders Discord images with the same Three.js scene and material definitions. Wack Hacker’s quality check includes the selected acrylic with matte engraving and a simulated stamp impression on paper. Black stamp artwork represents removed rubber; the remaining surface prints. These previews do not predict exact ink transfer or laser kerf, or prove that fine details will survive manufacturing.
