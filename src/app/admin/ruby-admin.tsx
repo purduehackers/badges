@@ -25,6 +25,7 @@ const checks = [
 export default function RubyAdmin() {
   const [baseUrl, setBaseUrl] = useState("https://localhost:5001");
   const [token, setToken] = useState("");
+  const [targetDevice, setTargetDevice] = useState("");
   const [format, setFormat] = useState<RubyReport["auth"]["format"]>("personal-access-token");
   const [notes, setNotes] = useState("");
   const [report, setReport] = useState<RubyReport>();
@@ -59,6 +60,7 @@ export default function RubyAdmin() {
         collectedAt: new Date().toISOString(),
         source: "browser",
         baseUrl: base,
+        targetDevice: targetDevice.trim() || undefined,
         pageOrigin: location.origin,
         userAgent: navigator.userAgent,
         secureContext: isSecureContext,
@@ -67,7 +69,7 @@ export default function RubyAdmin() {
         notes: "",
       });
       await collectRuby(
-        { baseUrl: base, token, format, signal: controller.current.signal },
+        { baseUrl: base, token, targetDevice, format, signal: controller.current.signal },
         (check) => {
           setReport((current) =>
             current ? { ...current, checks: [...current.checks, check] } : current,
@@ -151,6 +153,23 @@ export default function RubyAdmin() {
               <p className="ruby-help">
                 Kept in this tab’s memory and sent only to the Ruby address above. Never saved to
                 this site or included in the report.
+              </p>
+              <label htmlFor="ruby-device">
+                Laser serial number <span>needed for device checks</span>
+              </label>
+              <input
+                id="ruby-device"
+                type="text"
+                required={Boolean(token.trim())}
+                value={targetDevice}
+                onChange={(e) => setTargetDevice(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Copy from Ruby’s device settings"
+              />
+              <p className="ruby-help">
+                The API needs its own laser selection, even when Ruby’s screen is connected. This
+                selects the laser to read; it does not change the machine setup.
               </p>
               <details className="ruby-advanced">
                 <summary>Authentication options</summary>
