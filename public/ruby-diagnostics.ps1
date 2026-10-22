@@ -27,6 +27,10 @@ $authValue = switch ($format) {
     'bearer' { "Bearer $token" }
     default { "PersonalAccessToken $token" }
 }
+$targetDevice = (Read-Host 'Laser serial number from Ruby device settings (Enter for no target)').Trim()
+if ($targetDevice -and $targetDevice -match '[^\x21-\x7e]') {
+    throw 'Enter the laser serial number without spaces or line breaks.'
+}
 $origin = 'https://badges.purduehackers.com'
 
 $handler = [System.Net.Http.HttpClientHandler]::new()
@@ -72,9 +76,17 @@ function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true) {
     $request.Headers.TryAddWithoutValidation('Origin', $origin) | Out-Null
     if ($method -eq 'OPTIONS') {
         $request.Headers.TryAddWithoutValidation('Access-Control-Request-Method', 'GET') | Out-Null
-        $request.Headers.TryAddWithoutValidation('Access-Control-Request-Headers', 'authorization') | Out-Null
-    } elseif ($authenticated -and $token) {
-        $request.Headers.TryAddWithoutValidation('Authorization', $authValue) | Out-Null
+        $preflightHeaders = 'authorization,x-api-version'
+        if ($targetDevice) { $preflightHeaders += ',x-target-device' }
+        $request.Headers.TryAddWithoutValidation('Access-Control-Request-Headers', $preflightHeaders) | Out-Null
+    } else {
+        if ($path.StartsWith('/api/OpenApi/')) {
+            $request.Headers.TryAddWithoutValidation('x-api-version', '1.0-OpenApi') | Out-Null
+            if ($targetDevice) { $request.Headers.TryAddWithoutValidation('x-target-device', $targetDevice) | Out-Null }
+        }
+        if ($authenticated -and $token) {
+            $request.Headers.TryAddWithoutValidation('Authorization', $authValue) | Out-Null
+        }
     }
     $response = $null
     try {
@@ -92,6 +104,11 @@ function Read-Ruby($name, $path, $method = 'GET', $authenticated = $true) {
         if ($body -and $method -ne 'OPTIONS') {
             try { $result.data = Protect-Data (ConvertFrom-Json $body) }
             catch { $result.state = 'error'; $result.error = 'Response was not JSON. Check the API address and port.' }
+        }
+        if ($result.data -and $result.data.code -eq 'ERR_QUEUE_000') {
+            $result.detail = 'Ruby returned No device (ERR_QUEUE_000). Check the laser serial number and connection in Ruby.'
+        } elseif ($result.status -eq 204) {
+            $result.detail = 'Ruby returned no content.'
         }
         Write-Host "$name : HTTP $($result.status)"
     } catch {
@@ -128,6 +145,7 @@ try {
         collectedAt = [DateTime]::UtcNow.ToString('o')
         source = 'windows'
         baseUrl = $base
+        targetDevice = $targetDevice
         testedOrigin = $origin
         powershell = $PSVersionTable.PSVersion.ToString()
         os = [Environment]::OSVersion.VersionString

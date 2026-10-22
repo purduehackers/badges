@@ -8,17 +8,17 @@ export const RUBY_CHECKS = [
   {
     name: "Import profiles",
     path: "/api/OpenApi/GetImportProfiles",
-    detail: "Saved import and processing configurations",
+    detail: "Available profile names, IDs, and materials",
   },
   {
     name: "Designs",
     path: "/api/OpenApi/GetDesigns",
-    detail: "Existing design IDs and import metadata",
+    detail: "Saved design names and IDs",
   },
   {
     name: "Workbenches",
     path: "/api/OpenApi/GetWorkbenches",
-    detail: "Prepared jobs and their configuration",
+    detail: "Saved job names and IDs",
   },
   {
     name: "Queue",
@@ -47,6 +47,7 @@ export type RubyReport = {
   collectedAt: string;
   source: "browser";
   baseUrl: string;
+  targetDevice?: string;
   pageOrigin: string;
   userAgent: string;
   secureContext: boolean;
@@ -108,6 +109,7 @@ export function redact(value: unknown, token = ""): unknown {
 }
 
 async function readJson(response: Response): Promise<unknown> {
+  if (response.status === 204) return undefined;
   if (!response.body) throw new Error("Ruby returned an empty response.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -134,10 +136,37 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+function responseDetail(status: number, path: string, data: unknown, hasToken: boolean): string {
+  if (status === 401 || status === 403) {
+    return hasToken
+      ? "Ruby rejected the authorization header. Check the token, header format, and permissions."
+      : "Ruby is reachable. Enter a Personal Access Token to read this data.";
+  }
+  const code =
+    data && typeof data === "object" && "code" in data && typeof data.code === "string"
+      ? data.code.slice(0, 100)
+      : undefined;
+  if (status < 200 || status >= 300) {
+    if (code === "ERR_QUEUE_000") {
+      return "Ruby returned ‘No device’ (ERR_QUEUE_000). Check the laser’s serial number and connection in Ruby.";
+    }
+    return `Ruby returned ${code ? `${code} (HTTP ${status})` : `HTTP ${status}`}. See the response in the report.`;
+  }
+  if (status === 204) return "Ruby returned no content. This does not confirm a connected laser.";
+  if (Array.isArray(data)) {
+    if (path === "/api/OpenApi/GetImportProfiles" && data.length === 0) {
+      return "No import profiles were returned. Check the target laser and Profiles in Ruby before importing jobs.";
+    }
+    return `${data.length.toLocaleString("en-US")} ${data.length === 1 ? "entry" : "entries"} returned.`;
+  }
+  return "JSON response collected.";
+}
+
 export async function collectRuby(
   options: {
     baseUrl: string;
     token: string;
+    targetDevice?: string;
     format: RubyReport["auth"]["format"];
     signal: AbortSignal;
   },
@@ -146,6 +175,10 @@ export async function collectRuby(
   const baseUrl = rubyOrigin(options.baseUrl);
   const token = options.token.trim().replace(/^(?:PersonalAccessToken|Bearer)\s+/i, "");
   if (/[\r\n]/.test(token)) throw new Error("The token must be a single line.");
+  const targetDevice = options.targetDevice?.trim();
+  if (targetDevice && !/^[\x21-\x7e]+$/.test(targetDevice)) {
+    throw new Error("Enter the laser’s serial number without spaces or line breaks.");
+  }
   const authorization = token
     ? options.format === "raw"
       ? token
@@ -160,6 +193,12 @@ export async function collectRuby(
         method: "GET",
         headers: {
           Accept: "application/json",
+          ...(path !== RUBY_SCHEMA_PATH
+            ? {
+                "x-api-version": "1.0-OpenApi",
+                ...(targetDevice ? { "x-target-device": targetDevice } : {}),
+              }
+            : {}),
           ...(authenticated && authorization ? { Authorization: authorization } : {}),
         },
         mode: "cors",
@@ -171,15 +210,6 @@ export async function collectRuby(
       });
       status = response.status;
       const data = redact(await readJson(response), token);
-      const detail = response.ok
-        ? "JSON response collected."
-        : status === 401 || status === 403
-          ? token
-            ? "Ruby rejected the authorization header. Check the token, header format, and permissions."
-            : "Ruby is reachable. Enter a Personal Access Token to read this data."
-          : status === 400
-            ? "Ruby needs request parameters. The report includes its response and API schema."
-            : `Ruby returned HTTP ${status}. See the response in the report.`;
       return {
         name,
         path,
@@ -189,7 +219,7 @@ export async function collectRuby(
             ? "needs-input"
             : "error",
         status,
-        detail,
+        detail: responseDetail(status, path, data, Boolean(token)),
         data,
         durationMs: Math.round(performance.now() - start),
       };
