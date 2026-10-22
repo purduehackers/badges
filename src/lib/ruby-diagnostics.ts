@@ -50,7 +50,7 @@ export type RubyReport = {
   pageOrigin: string;
   userAgent: string;
   secureContext: boolean;
-  auth: { supplied: boolean; format: "bearer" | "raw" };
+  auth: { supplied: boolean; format: "personal-access-token" | "bearer" | "raw" };
   checks: RubyCheck[];
   notes: string;
 };
@@ -86,7 +86,10 @@ export function redact(value: unknown, token = ""): unknown {
   if (typeof value === "string") {
     let text = token ? value.split(token).join("[redacted]") : value;
     text = text.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted JWT]");
-    text = text.replace(/Bearer\s+[^\s"<>]+/gi, "Bearer [redacted]");
+    text = text.replace(
+      /\b(Bearer|PersonalAccessToken)\s+[A-Za-z0-9._~+/-]{20,}={0,2}/gi,
+      "$1 [redacted]",
+    );
     return text;
   }
   if (Array.isArray(value)) return value.map((item) => redact(item, token));
@@ -132,16 +135,21 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 export async function collectRuby(
-  options: { baseUrl: string; token: string; format: "bearer" | "raw"; signal: AbortSignal },
+  options: {
+    baseUrl: string;
+    token: string;
+    format: RubyReport["auth"]["format"];
+    signal: AbortSignal;
+  },
   onCheck: (check: RubyCheck) => void,
 ): Promise<void> {
   const baseUrl = rubyOrigin(options.baseUrl);
-  const token = options.token.trim().replace(/^Bearer\s+/i, "");
+  const token = options.token.trim().replace(/^(?:PersonalAccessToken|Bearer)\s+/i, "");
   if (/[\r\n]/.test(token)) throw new Error("The token must be a single line.");
   const authorization = token
-    ? options.format === "bearer"
-      ? `Bearer ${token}`
-      : token
+    ? options.format === "raw"
+      ? token
+      : `${options.format === "bearer" ? "Bearer" : "PersonalAccessToken"} ${token}`
     : undefined;
 
   async function probe(name: string, path: string, authenticated: boolean): Promise<RubyCheck> {
@@ -167,7 +175,7 @@ export async function collectRuby(
         ? "JSON response collected."
         : status === 401 || status === 403
           ? token
-            ? "Ruby rejected this token or its permissions."
+            ? "Ruby rejected the authorization header. Check the token, header format, and permissions."
             : "Ruby is reachable. Enter a Personal Access Token to read this data."
           : status === 400
             ? "Ruby needs request parameters. The report includes its response and API schema."

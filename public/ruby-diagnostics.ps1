@@ -19,10 +19,14 @@ if ((-not ($loopback -or $privateIp -or $knownHost)) -or
 }
 $base = $uri.GetLeftPart([UriPartial]::Authority)
 $secureToken = Read-Host 'Ruby Personal Access Token (hidden; Enter to skip)' -AsSecureString
-$token = [System.Net.NetworkCredential]::new('', $secureToken).Password.Trim() -replace '^Bearer\s+', ''
-$format = Read-Host 'Authorization format [bearer], or raw'
-if ($format -ne 'raw') { $format = 'bearer' }
-$authValue = if ($format -eq 'raw') { $token } else { "Bearer $token" }
+$token = [System.Net.NetworkCredential]::new('', $secureToken).Password.Trim() -replace '^(PersonalAccessToken|Bearer)\s+', ''
+$format = Read-Host 'Authorization format [personal-access-token], bearer, or raw'
+if ($format -notin @('bearer', 'raw')) { $format = 'personal-access-token' }
+$authValue = switch ($format) {
+    'raw' { $token }
+    'bearer' { "Bearer $token" }
+    default { "PersonalAccessToken $token" }
+}
 $origin = 'https://badges.purduehackers.com'
 
 $handler = [System.Net.Http.HttpClientHandler]::new()
@@ -38,7 +42,7 @@ function Protect-Data($value) {
     if ($value -is [string]) {
         if ($token) { $value = $value.Replace($token, '[redacted]') }
         $value = $value -replace 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', '[redacted JWT]'
-        return ($value -replace 'Bearer\s+[^\s"<>]+', 'Bearer [redacted]')
+        return ($value -replace '\b(Bearer|PersonalAccessToken)\s+[A-Za-z0-9._~+/-]{20,}={0,2}', '$1 [redacted]')
     }
     if ($value -is [System.Collections.IDictionary]) {
         $result = [ordered]@{}
