@@ -4,31 +4,31 @@ export const RUBY_CHECKS = [
     name: "Device",
     path: "/api/OpenApi/GetDeviceStatus",
     detail: "Connection, machine state, and device details",
+    targeted: true,
   },
   {
     name: "Import profiles",
     path: "/api/OpenApi/GetImportProfiles",
     detail: "Available profile names, IDs, and materials",
+    targeted: true,
   },
   {
     name: "Designs",
     path: "/api/OpenApi/GetDesigns",
     detail: "Saved design names and IDs",
+    targeted: false,
   },
   {
     name: "Workbenches",
     path: "/api/OpenApi/GetWorkbenches",
     detail: "Saved job names and IDs",
+    targeted: false,
   },
   {
     name: "Queue",
     path: "/api/OpenApi/GetQueueElements",
     detail: "Current queue entries and ordering",
-  },
-  {
-    name: "Job status",
-    path: "/api/OpenApi/GetJobsStatus",
-    detail: "Job processing and completion states",
+    targeted: true,
   },
 ] as const;
 
@@ -155,7 +155,7 @@ function responseDetail(status: number, path: string, data: unknown, hasToken: b
   if (status === 204) return "Ruby returned no content. This does not confirm a connected laser.";
   if (Array.isArray(data)) {
     if (path === "/api/OpenApi/GetImportProfiles" && data.length === 0) {
-      return "No import profiles were returned. Check the target laser and Profiles in Ruby before importing jobs.";
+      return "No import profiles are visible to this API user. Check Ruby’s Profiles menu; saved materials alone are not import profiles.";
     }
     return `${data.length.toLocaleString("en-US")} ${data.length === 1 ? "entry" : "entries"} returned.`;
   }
@@ -185,7 +185,12 @@ export async function collectRuby(
       : `${options.format === "bearer" ? "Bearer" : "PersonalAccessToken"} ${token}`
     : undefined;
 
-  async function probe(name: string, path: string, authenticated: boolean): Promise<RubyCheck> {
+  async function probe(
+    name: string,
+    path: string,
+    authenticated: boolean,
+    targeted = false,
+  ): Promise<RubyCheck> {
     const start = performance.now();
     let status: number | undefined;
     try {
@@ -196,7 +201,7 @@ export async function collectRuby(
           ...(path !== RUBY_SCHEMA_PATH
             ? {
                 "x-api-version": "1.0-OpenApi",
-                ...(targetDevice ? { "x-target-device": targetDevice } : {}),
+                ...(targeted && targetDevice ? { "x-target-device": targetDevice } : {}),
               }
             : {}),
           ...(authenticated && authorization ? { Authorization: authorization } : {}),
@@ -260,7 +265,7 @@ export async function collectRuby(
 
   for (const check of RUBY_CHECKS) {
     if (options.signal.aborted) break;
-    onCheck(await probe(check.name, check.path, true));
+    onCheck(await probe(check.name, check.path, true, check.targeted));
   }
 }
 
