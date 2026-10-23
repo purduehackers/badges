@@ -108,7 +108,7 @@ export function redact(value: unknown, token = ""): unknown {
   return value;
 }
 
-async function readJson(response: Response): Promise<unknown> {
+export async function readRubyJson(response: Response): Promise<unknown> {
   if (response.status === 204) return undefined;
   if (!response.body) throw new Error("Ruby returned an empty response.");
   const reader = response.body.getReader();
@@ -214,7 +214,7 @@ export async function collectRuby(
         signal: AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]),
       });
       status = response.status;
-      const data = redact(await readJson(response), token);
+      const data = redact(await readRubyJson(response), token);
       return {
         name,
         path,

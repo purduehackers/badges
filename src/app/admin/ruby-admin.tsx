@@ -1,87 +1,218 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { downloadReport, rubyOrigin } from "@/lib/ruby-diagnostics";
 import {
-  collectRuby,
-  downloadReport,
-  redact,
-  rubyOrigin,
-  RUBY_CHECKS,
-  RUBY_SCHEMA_PATH,
-  type RubyReport,
-} from "@/lib/ruby-diagnostics";
+  duplicateImport,
+  prepareSvg,
+  receiptSchema,
+  RECEIPTS_KEY,
+  rubyClient,
+  type RubyDevice,
+  type RubyJob,
+  type RubyReceipt,
+} from "@/lib/ruby-production";
+import RubyDiagnostics from "./ruby-diagnostics-panel";
 import "./ruby-admin.css";
 
-const checks = [
-  {
-    name: "API schema",
-    path: RUBY_SCHEMA_PATH,
-    detail: "Exact request formats for uploads, profiles, and queueing",
-  },
-  ...RUBY_CHECKS,
-];
+type Client = ReturnType<typeof rubyClient>;
+type CuttingFile = Awaited<ReturnType<typeof prepareSvg>>;
+const releaseSchema = z.array(
+  z.object({ version: z.string(), files: z.array(z.object({ name: z.string(), url: z.url() })) }),
+);
+type Release = z.infer<typeof releaseSchema>[number];
+const stateLabel = {
+  sending: "Sending",
+  submitted: "Upload accepted",
+  rejected: "Upload rejected",
+  unknown: "Check in Ruby",
+};
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : "Something went wrong. Please try again.";
 
 export default function RubyAdmin() {
   const [baseUrl, setBaseUrl] = useState("https://localhost:5001");
   const [token, setToken] = useState("");
-  const [targetDevice, setTargetDevice] = useState("");
-  const [format, setFormat] = useState<RubyReport["auth"]["format"]>("personal-access-token");
-  const [notes, setNotes] = useState("");
-  const [report, setReport] = useState<RubyReport>();
-  const [running, setRunning] = useState(false);
+  const [targetDevice, setTargetDevice] = useState("X4-0436");
+  const [client, setClient] = useState<Client>();
+  const [device, setDevice] = useState<RubyDevice>();
+  const [queue, setQueue] = useState<RubyJob[]>();
+  const [refreshedAt, setRefreshedAt] = useState("");
+  const [queueError, setQueueError] = useState("");
+  const [files, setFiles] = useState<CuttingFile[]>([]);
+  const [receipts, setReceipts] = useState<RubyReceipt[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [version, setVersion] = useState("");
+  const [catalogError, setCatalogError] = useState("");
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const controller = useRef<AbortController | undefined>(undefined);
-  const [copied, setCopied] = useState(false);
+  const lock = useRef(false);
 
-  let origin = "";
-  try {
-    origin = rubyOrigin(baseUrl);
-  } catch {
-    /* Show validation when the form is submitted. */
-  }
-
-  const completed = report?.checks.filter((check) => check.state === "collected").length ?? 0;
-  const blocked = report?.checks.some((check) => check.state === "blocked");
-  const exportData = () =>
-    redact({ ...report, notes }, token.trim().replace(/^(?:PersonalAccessToken|Bearer)\s+/i, ""));
-
-  async function run(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (running) return;
-    setError("");
-    setCopied(false);
+  useEffect(() => {
     try {
-      const base = rubyOrigin(baseUrl);
-      controller.current = new AbortController();
-      setRunning(true);
-      setReport({
-        version: 1,
-        collectedAt: new Date().toISOString(),
-        source: "browser",
-        baseUrl: base,
-        targetDevice: targetDevice.trim() || undefined,
-        pageOrigin: location.origin,
-        userAgent: navigator.userAgent,
-        secureContext: isSecureContext,
-        auth: { supplied: Boolean(token.trim()), format },
-        checks: [],
-        notes: "",
-      });
-      await collectRuby(
-        { baseUrl: base, token, targetDevice, format, signal: controller.current.signal },
-        (check) => {
-          setReport((current) =>
-            current ? { ...current, checks: [...current.checks, check] } : current,
-          );
-        },
+      const saved = z
+        .array(receiptSchema)
+        .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
+      setReceipts(
+        saved.map((item) =>
+          item.state === "sending"
+            ? {
+                ...item,
+                state: "unknown",
+                detail:
+                  "This page closed before the upload was confirmed. Check Ruby before trying again.",
+              }
+            : item,
+        ),
       );
+      setHistoryReady(true);
+    } catch {
+      setError(
+        "Could not read import history. Allow browser storage before uploading so imports can be tracked.",
+      );
+    }
+    const controller = new AbortController();
+    fetch("/api/admin/releases", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error("Published files are unavailable. You can still choose local files.");
+        const catalog = releaseSchema.parse(await response.json());
+        setReleases(catalog);
+        setVersion(catalog[0]?.version ?? "");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setCatalogError("Published files are unavailable. You can still choose local files.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  async function run(label: string, action: () => Promise<void>) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(label);
+    setError("");
+    try {
+      await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start the checks.");
+      setError(message(cause));
     } finally {
-      setRunning(false);
+      lock.current = false;
+      setBusy("");
     }
   }
+
+  async function refresh(current: Client) {
+    setQueueError("");
+    const [laser, jobs] = await Promise.allSettled([current.device(), current.queue()]);
+    setDevice(laser.status === "fulfilled" ? laser.value : undefined);
+    setQueue(jobs.status === "fulfilled" ? jobs.value : undefined);
+    setRefreshedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    const errors = [laser, jobs]
+      .filter((result) => result.status === "rejected")
+      .map((result) => message(result.reason));
+    setQueueError(errors.join(" "));
+    if (laser.status === "rejected") throw new Error(message(laser.reason));
+  }
+
+  async function addFiles(incoming: File[]) {
+    const prepared = await Promise.all(incoming.map(prepareSvg));
+    setFiles((current) => [
+      ...current,
+      ...prepared.filter(
+        (item, index) =>
+          !current.some(
+            (existing) => existing.digest === item.digest && existing.file.name === item.file.name,
+          ) &&
+          prepared.findIndex(
+            (other) => other.digest === item.digest && other.file.name === item.file.name,
+          ) === index,
+      ),
+    ]);
+  }
+
+  async function importFiles() {
+    if (!client || !historyReady) return;
+    const connection = client.connection;
+    const saved = z
+      .array(receiptSchema)
+      .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
+    let history = saved;
+    const persist = (next: RubyReceipt[]) => {
+      localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next));
+      history = next;
+      setReceipts(next);
+    };
+    for (const item of files) {
+      if (duplicateImport(history, connection, item.digest, item.file.name)) continue;
+      const receipt: RubyReceipt = {
+        id: `ph-${crypto.randomUUID()}`,
+        name: item.file.name,
+        digest: item.digest,
+        baseUrl: connection.baseUrl,
+        targetDevice: connection.targetDevice,
+        startedAt: new Date().toISOString(),
+        state: "sending",
+        detail: "Waiting for Ruby’s upload response.",
+      };
+      persist([...history, receipt]);
+      const result = await client.upload(item.file, receipt.id);
+      persist(history.map((entry) => (entry.id === receipt.id ? { ...entry, ...result } : entry)));
+      // An uncertain import must be checked before continuing a batch.
+      if (result.state !== "submitted") break;
+    }
+    await refresh(client);
+  }
+
+  async function checkImport(receipt: RubyReceipt) {
+    if (!client) return;
+    const jobs = await client.jobs(receipt.id);
+    const detail = jobs.length
+      ? jobs.map((job) => `${job.name ?? receipt.name}: ${job.status ?? "found"}`).join("; ")
+      : "No tracked queue entry yet. The design may still need setup in Ruby; do not re-upload based on this result alone.";
+    const saved = z
+      .array(receiptSchema)
+      .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
+    const next = saved.map((item) =>
+      item.id === receipt.id
+        ? {
+            ...item,
+            state: jobs.length
+              ? ("submitted" as const)
+              : item.state === "sending"
+                ? ("unknown" as const)
+                : item.state,
+            detail,
+          }
+        : item,
+    );
+    localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next));
+    setReceipts(next);
+    await refresh(client);
+  }
+
+  let rubyUrl = "";
+  try {
+    const url = new URL(rubyOrigin(baseUrl));
+    url.port = "2402";
+    rubyUrl = url.origin;
+  } catch {
+    /* Validate the address on connect. */
+  }
+  const pending = files.filter(
+    (item) => !client || !duplicateImport(receipts, client.connection, item.digest, item.file.name),
+  );
+  const visibleReceipts = receipts
+    .filter(
+      (item) =>
+        client &&
+        item.baseUrl === client.connection.baseUrl &&
+        item.targetDevice.toLowerCase() === client.connection.targetDevice.toLowerCase(),
+    )
+    .toReversed();
 
   return (
     <main className="ruby-admin">
@@ -89,309 +220,375 @@ export default function RubyAdmin() {
         <Link href="/">
           Purdue Hackers <span>/ Badges</span>
         </Link>
-        <span className="ruby-tag">Production setup</span>
+        <span className="ruby-tag">Bechtel · Production</span>
       </nav>
       <header className="ruby-header">
-        <div className="ruby-eyebrow">BECHTEL · RUBY CONNECTION</div>
-        <h1>
-          From designs
-          <br />
-          to the laser queue.
-        </h1>
-        <p>
-          First, let’s learn how this computer runs Ruby. Open this page on the BIDC computer and
-          collect a setup report.
-        </p>
-        <div className="ruby-mode">
-          <span /> Read-only diagnostics{" "}
-          <span className="ruby-mode-note">No uploads, queue changes, or laser commands.</span>
-        </div>
+        <div className="ruby-eyebrow">FROM DESIGN TO CUTTING</div>
+        <h1>Make the badges.</h1>
+        <p>Send your cutting files to Ruby, set up the jobs, and keep an eye on the queue.</p>
       </header>
-
       <div className="ruby-grid">
-        <section className="ruby-panel">
-          <div className="ruby-section-heading">
-            <span className="ruby-number">01</span>
-            <h2>Connect to Ruby</h2>
-          </div>
-          <p className="ruby-muted">Keep Ruby and its TrayApp running on this computer.</p>
-          <form onSubmit={run}>
-            <fieldset disabled={running}>
-              <label htmlFor="ruby-address">Ruby API address</label>
-              <input
-                id="ruby-address"
-                type="url"
-                required
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <p className="ruby-help">
-                Use port 5001 for the API. Port 2402 opens the Ruby dashboard.
-              </p>
-              <div className="ruby-presets">
-                <button type="button" onClick={() => setBaseUrl("https://localhost:5001")}>
-                  This computer
-                </button>
-                <button type="button" onClick={() => setBaseUrl("https://10.165.5.31:5001")}>
-                  BIDC network address
-                </button>
-              </div>
-              <label htmlFor="ruby-token">
-                Personal Access Token <span>optional for connectivity checks</span>
-              </label>
-              <input
-                id="ruby-token"
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Paste the Ruby API token"
-              />
-              <p className="ruby-help">
-                Kept in this tab’s memory and sent only to the Ruby address above. Never saved to
-                this site or included in the report.
-              </p>
-              <label htmlFor="ruby-device">
-                Laser serial number <span>needed for device checks</span>
-              </label>
-              <input
-                id="ruby-device"
-                type="text"
-                required={Boolean(token.trim())}
-                value={targetDevice}
-                onChange={(e) => setTargetDevice(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Copy from Ruby’s device settings"
-              />
-              <p className="ruby-help">
-                The API needs its own laser selection, even when Ruby’s screen is connected. This
-                selects the laser to read; it does not change the machine setup.
-              </p>
-              <details className="ruby-advanced">
-                <summary>Authentication options</summary>
-                <label htmlFor="ruby-auth">Authorization header format</label>
+        <div className="ruby-stack">
+          <section className="ruby-panel">
+            <div className="ruby-section-heading">
+              <span className="ruby-number">01</span>
+              <h2>Connect to Ruby</h2>
+            </div>
+            {client ? (
+              <>
+                <p className="ruby-connected">Connected to {client.connection.targetDevice}</p>
+                <p className="ruby-muted">{client.connection.baseUrl}</p>
+                <div className="ruby-actions">
+                  <button
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      setClient(undefined);
+                      setDevice(undefined);
+                      setQueue(undefined);
+                      setToken("");
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                  {rubyUrl && (
+                    <a className="ruby-button" href={rubyUrl} target="_blank" rel="noreferrer">
+                      Open Ruby ↗
+                    </a>
+                  )}
+                </div>
+              </>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run("Connecting…", async () => {
+                    const next = rubyClient({ baseUrl, token, targetDevice });
+                    await refresh(next);
+                    setClient(next);
+                  });
+                }}
+              >
+                <p className="ruby-muted">Open this page on the BIDC computer with Ruby running.</p>
+                <fieldset disabled={Boolean(busy)}>
+                  <label htmlFor="ruby-address">Ruby API address</label>
+                  <input
+                    id="ruby-address"
+                    type="url"
+                    required
+                    value={baseUrl}
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <label htmlFor="ruby-token">Personal Access Token</label>
+                  <input
+                    id="ruby-token"
+                    type="password"
+                    required
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Paste the Ruby token"
+                  />
+                  <p className="ruby-help">Kept in this tab and sent only to Ruby.</p>
+                  <label htmlFor="ruby-device">Laser serial number</label>
+                  <input
+                    id="ruby-device"
+                    required
+                    value={targetDevice}
+                    onChange={(event) => setTargetDevice(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <div className="ruby-actions">
+                    <button className="ruby-primary" type="submit">
+                      {busy === "Connecting…" ? busy : "Connect"}
+                    </button>
+                    {rubyUrl && (
+                      <a className="ruby-text-link" href={rubyUrl} target="_blank" rel="noreferrer">
+                        Open Ruby ↗
+                      </a>
+                    )}
+                  </div>
+                </fieldset>
+                <p className="ruby-help">
+                  Allow local-network access if your browser asks. For a certificate error, open
+                  Ruby and check its certificate setup with BIDC staff.
+                </p>
+              </form>
+            )}
+          </section>
+          <section className="ruby-panel">
+            <div className="ruby-section-heading">
+              <span className="ruby-number">02</span>
+              <h2>Choose cutting files</h2>
+            </div>
+            <p className="ruby-muted">
+              Published files include the packed sheets and the mirrored stamp.
+            </p>
+            {releases.length > 0 && (
+              <div className="ruby-release-picker">
+                <label htmlFor="ruby-version">Hack Night</label>
                 <select
-                  id="ruby-auth"
-                  value={format}
-                  onChange={(e) =>
-                    setFormat(
-                      e.target.value === "raw" || e.target.value === "bearer"
-                        ? e.target.value
-                        : "personal-access-token",
-                    )
+                  id="ruby-version"
+                  value={version}
+                  disabled={Boolean(busy)}
+                  onChange={(event) => setVersion(event.target.value)}
+                >
+                  {releases.map((release) => (
+                    <option key={release.version} value={release.version}>
+                      Hack Night {release.version}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={Boolean(busy)}
+                  onClick={() =>
+                    void run("Loading files…", async () => {
+                      const release = releases.find((item) => item.version === version);
+                      if (!release) return;
+                      const downloads = await Promise.all(
+                        release.files.map(async (item) => {
+                          const response = await fetch(item.url, {
+                            credentials: "omit",
+                            referrerPolicy: "no-referrer",
+                            signal: AbortSignal.timeout(30_000),
+                          });
+                          if (!response.ok) throw new Error(`Could not download ${item.name}.`);
+                          return new File(
+                            [await response.blob()],
+                            `${release.version}-${item.name}`,
+                            { type: "image/svg+xml" },
+                          );
+                        }),
+                      );
+                      await addFiles(downloads);
+                    })
                   }
                 >
-                  <option value="personal-access-token">PersonalAccessToken (Ruby default)</option>
-                  <option value="bearer">Bearer token</option>
-                  <option value="raw">Raw token</option>
-                </select>
-                <p className="ruby-help">
-                  Match the format shown in Ruby’s Swagger “Authorize” dialog. Use a Personal Access
-                  Token, not your Ruby password.
-                </p>
-              </details>
-            </fieldset>
-            {error ? (
-              <p role="alert" className="ruby-error">
-                {error}
-              </p>
-            ) : null}
+                  Add published files
+                </button>
+              </div>
+            )}
+            {catalogError && <p className="ruby-muted">{catalogError}</p>}
+            <label htmlFor="ruby-files">Or choose local SVG files</label>
+            <input
+              id="ruby-files"
+              type="file"
+              accept=".svg,image/svg+xml"
+              multiple
+              disabled={Boolean(busy)}
+              onChange={(event) => {
+                const selected = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                void run("Reading files…", () => addFiles(selected));
+              }}
+            />
+            {files.length > 0 && (
+              <ul className="ruby-file-list">
+                {files.map((item) => {
+                  const previous =
+                    client &&
+                    duplicateImport(receipts, client.connection, item.digest, item.file.name);
+                  return (
+                    <li key={`${item.file.name}-${item.digest}`}>
+                      <div>
+                        <strong>{item.file.name}</strong>
+                        <span>{item.dimensions}</span>
+                        {previous && (
+                          <span className="ruby-connected">
+                            Import recorded · {stateLabel[previous.state]}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        disabled={Boolean(busy)}
+                        aria-label={`Remove ${item.file.name}`}
+                        onClick={() =>
+                          setFiles((current) => current.filter((file) => file !== item))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             <div className="ruby-actions">
-              <button className="ruby-primary" type="submit" disabled={running}>
-                {running ? "Collecting…" : report ? "Run again" : "Run diagnostics"}
-                <span aria-hidden="true">→</span>
+              <button
+                className="ruby-primary"
+                disabled={!client || !historyReady || !pending.length || Boolean(busy)}
+                onClick={() =>
+                  void run("Sending files to Ruby…", async () => {
+                    if (!navigator.locks)
+                      throw new Error(
+                        "Use a current Chrome or Edge browser to track uploads safely.",
+                      );
+                    await navigator.locks.request(RECEIPTS_KEY, importFiles);
+                  })
+                }
+              >
+                {busy === "Sending files to Ruby…"
+                  ? busy
+                  : `Send ${pending.length || "files"}${pending.length ? ` file${pending.length === 1 ? "" : "s"}` : ""} to Ruby`}
               </button>
-              {running ? (
-                <button type="button" onClick={() => controller.current?.abort()}>
-                  Stop
-                </button>
-              ) : token ? (
-                <button type="button" onClick={() => setToken("")}>
-                  Clear token
-                </button>
-              ) : null}
             </div>
-          </form>
-          {origin ? (
-            <a
-              className="ruby-text-link"
-              href={`${origin}/swagger/index.html`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open Ruby’s API docs ↗
-            </a>
-          ) : null}
-          <p className="ruby-help">
-            If the browser asks for local-network access, allow it for this site. If Ruby shows a
-            certificate error, have BIDC staff check its certificate setup.
-          </p>
-        </section>
-
-        <section className="ruby-panel ruby-results" aria-label="Diagnostic results">
-          <div className="ruby-section-heading">
-            <span className="ruby-number">02</span>
-            <h2>Collect setup data</h2>
-            <span className="ruby-count">
-              {completed} / {checks.length}
-            </span>
-          </div>
-          <p className="ruby-muted" aria-live="polite">
-            {running
-              ? "Reading Ruby. Each request has a 15-second timeout."
-              : report
-                ? `${completed} of ${checks.length} responses collected. This does not verify cutting settings.`
-                : "Results appear here as each check finishes."}
-          </p>
-          <div className="ruby-checks">
-            {checks.map((check, index) => {
-              const result = report?.checks.find((item) => item.path === check.path);
-              const active = running && report?.checks.length === index;
-              return (
-                <div className="ruby-check" key={check.path}>
-                  <span
-                    className={`ruby-check-icon ${result?.state ?? (active ? "active" : "waiting")}`}
-                    aria-hidden="true"
-                  >
-                    {result?.state === "collected" ? "✓" : result ? "!" : active ? "…" : "·"}
-                  </span>
-                  <div>
-                    <div className="ruby-check-title">
-                      <h3>{check.name}</h3>
-                      <span>
-                        {result
-                          ? result.status
-                            ? `HTTP ${result.status}`
-                            : "No response"
-                          : active
-                            ? "Reading"
-                            : "Waiting"}
+            <p className="ruby-help">
+              Files are sent unchanged, without an import profile. Finish their setup in Ruby.
+            </p>
+          </section>
+        </div>
+        <div className="ruby-stack">
+          <section className="ruby-panel ruby-queue">
+            <div className="ruby-section-heading">
+              <h2>Laser queue</h2>
+              <button
+                disabled={!client || Boolean(busy)}
+                onClick={() => client && void run("Refreshing…", () => refresh(client))}
+              >
+                Refresh
+              </button>
+            </div>
+            {device && (
+              <div className="ruby-device">
+                <span>
+                  {device.serialNo} · {device.status ?? "Status unavailable"}
+                </span>
+                {device.jobName && <strong>{device.jobName}</strong>}
+                {device.status === "Busy" && device.progress !== undefined && (
+                  <progress
+                    max={100}
+                    value={device.progress}
+                    aria-label="Current laser job progress"
+                  />
+                )}
+              </div>
+            )}
+            {queueError && (
+              <p role="alert" className="ruby-error">
+                {queueError}
+              </p>
+            )}
+            {queue ? (
+              queue.length ? (
+                <ol className="ruby-queue-list">
+                  {queue.map((job) => (
+                    <li key={job.id}>
+                      <span>{job.name ?? "Untitled job"}</span>
+                      <span
+                        className={`ruby-job-status ${job.status === "Running" ? "ruby-connected" : ""}`}
+                      >
+                        {job.status ?? "Unknown"}
                       </span>
-                    </div>
-                    <p>{result?.detail ?? check.detail}</p>
-                    {result?.data !== undefined ? (
-                      <details>
-                        <summary>View response</summary>
-                        <pre>{JSON.stringify(result.data, undefined, 2)}</pre>
-                      </details>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="ruby-empty">Ruby’s queue is empty.</p>
+              )
+            ) : (
+              <p className="ruby-empty">Connect to see the laser and its queued jobs.</p>
+            )}
+            {client && refreshedAt && (
+              <p className="ruby-help">Last checked at {refreshedAt}. Use Refresh to update.</p>
+            )}
+          </section>
+          <section className="ruby-panel ruby-handoff">
+            <div className="ruby-section-heading">
+              <span className="ruby-number">03</span>
+              <h2>Finish setup in Ruby</h2>
+            </div>
+            <ol>
+              <li>Find the imported designs and check their physical size.</li>
+              <li>Set the material, processing settings, and placement for each sheet.</li>
+              <li>Review the cutting preview, then add the jobs to Ruby’s queue.</li>
+            </ol>
+            <p className="ruby-help">
+              Published stamp files are already mirrored. Keep that orientation.
+            </p>
+            {rubyUrl && (
+              <a className="ruby-button" href={rubyUrl} target="_blank" rel="noreferrer">
+                Open Ruby ↗
+              </a>
+            )}
+          </section>
+        </div>
       </div>
-
-      <section className={`ruby-panel ruby-fallback ${blocked ? "ruby-attention" : ""}`}>
-        <div>
-          <h2>Browser can’t reach Ruby?</h2>
-          <p>
-            Use the Windows collector on the BIDC computer. It reads the same API endpoints and
-            records CORS response headers, without browser restrictions. It keeps normal certificate
-            validation.
-          </p>
-        </div>
-        <a className="ruby-button" href="/ruby-diagnostics.ps1" download>
-          Download Windows collector ↓
-        </a>
-        <details>
-          <summary>How to run it</summary>
-          <ol>
-            <li>Download the script and open PowerShell in your Downloads folder.</li>
-            <li>
-              Run <code>.\ruby-diagnostics.ps1</code>. Enter the API address and token when
-              prompted.
-            </li>
-            <li>
-              Send back the <code>ruby-diagnostics-*.json</code> file saved in that folder, along
-              with the browser report.
-            </li>
-          </ol>
-          <p>
-            If Windows blocks the script, ask BIDC staff to run it. The collector does not change
-            security settings or require administrator access.
-          </p>
-        </details>
-      </section>
-
-      <section className="ruby-panel ruby-export">
-        <div className="ruby-section-heading">
-          <span className="ruby-number">03</span>
-          <h2>Send back the report</h2>
-        </div>
-        <p className="ruby-muted">
-          Includes API schemas, responses, timings, and errors. Your token is removed. A failed
-          check is useful too.
+      {busy && (
+        <p role="status" className="ruby-activity">
+          {busy}
         </p>
-        <label htmlFor="ruby-notes">
-          Anything we should know? <span>optional</span>
-        </label>
-        <textarea
-          id="ruby-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="For example: the profile names you normally use for acrylic and stamp rubber, or the browser error you saw."
-          rows={3}
-        />
-        <div className="ruby-actions">
-          <button
-            className="ruby-primary"
-            disabled={!report || running}
-            onClick={() => downloadReport(exportData())}
-          >
-            Download debug report ↓
-          </button>
-          <button
-            disabled={!report || running}
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(JSON.stringify(exportData(), undefined, 2));
-                setCopied(true);
-              } catch {
-                setError("Clipboard access was blocked. Download the report instead.");
+      )}
+      {error && (
+        <p role="alert" className="ruby-error ruby-page-error">
+          {error}
+        </p>
+      )}
+      {visibleReceipts.length > 0 && (
+        <section className="ruby-panel ruby-imports">
+          <div className="ruby-section-heading">
+            <h2>Import receipts</h2>
+            <button
+              disabled={Boolean(busy)}
+              onClick={() =>
+                downloadReport({
+                  version: 1,
+                  collectedAt: new Date().toISOString(),
+                  imports: visibleReceipts,
+                })
               }
-            }}
-          >
-            {copied ? "Copied" : "Copy report"}
-          </button>
-        </div>
-      </section>
-
-      <section className="ruby-next">
-        <div className="ruby-eyebrow">WHAT THIS WILL UNLOCK</div>
-        <h2>One job per sheet. The right profile for each material.</h2>
-        <div className="ruby-pipeline">
-          <span>Published badge files</span>
-          <b>→</b>
-          <span>This BIDC computer</span>
-          <b>→</b>
-          <span>Ruby import + profile</span>
-          <b>→</b>
-          <span>Laser queue</span>
-        </div>
-        <p>
-          We’ll use this report to map the saved acrylic and rubber profiles, import the cutting
-          sheets at their exact size, and avoid duplicate jobs. The operator checks the setup and
-          starts the laser in Ruby.
-        </p>
-        <p className="ruby-help">
-          Next step after diagnostics: a controlled import and queue test. Uploading and queueing
-          are not enabled on this page yet.
-        </p>
-      </section>
+            >
+              Download receipts
+            </button>
+          </div>
+          <p className="ruby-muted">
+            Saved in this browser to prevent repeat uploads. An accepted upload still needs setup in
+            Ruby.
+          </p>
+          <ul>
+            {visibleReceipts.map((receipt) => (
+              <li key={receipt.id}>
+                <div>
+                  <strong>{receipt.name}</strong>
+                  <span className={`ruby-receipt-state ${receipt.state}`}>
+                    {stateLabel[receipt.state]}
+                  </span>
+                  <p>{receipt.detail}</p>
+                  <details>
+                    <summary>Tracking number</summary>
+                    <code>{receipt.id}</code>
+                  </details>
+                </div>
+                <button
+                  disabled={
+                    Boolean(busy) || receipt.state === "sending" || receipt.state === "rejected"
+                  }
+                  onClick={() =>
+                    void run("Checking import…", async () => {
+                      if (!navigator.locks)
+                        throw new Error("Use a current Chrome or Edge browser to check imports.");
+                      await navigator.locks.request(RECEIPTS_KEY, () => checkImport(receipt));
+                    })
+                  }
+                >
+                  Check import
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <RubyDiagnostics
+        connection={client?.connection ?? { baseUrl, token, targetDevice }}
+        receipts={receipts}
+        disabled={Boolean(busy)}
+      />
       <footer className="ruby-footer">
         <span>Purdue Hackers · Badge production</span>
-        <a
-          href="https://www.troteclaser.com/en-gb/helpcenter/software/ruby/ruby-2-9"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Ruby API documentation ↗
+        <a href="https://github.com/purduehackers/badge-designs" target="_blank" rel="noreferrer">
+          Published badge files ↗
         </a>
       </footer>
     </main>
