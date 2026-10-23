@@ -2,7 +2,9 @@
 
 Open `/admin` on the BIDC computer running Ruby and its TrayApp. Choose published cutting files or local SVGs, connect to Ruby, and send the files. The operator finishes material, processing, size, placement, and queue setup in Ruby.
 
-The admin page uses Purdue Hackers’ current [site identity](https://github.com/purduehackers/site2026): PolySans for interface text, PixelHackers for the heading and step numbers, the glider mark, and the purple, yellow, and off-white palette. The bundled fonts and glider come from that repository. These styles are scoped to `/admin`.
+The dark-only admin page uses Purdue Hackers’ current [site identity](https://github.com/purduehackers/site2026): PolySans for interface text, PixelHackers for the heading, the glider mark, and yellow actions with purple focus indicators. The bundled fonts and glider come from that repository. These styles are scoped to `/admin`.
+
+The page follows one column: connect, select files, upload, then continue in Ruby. API address and laser serial default to the BIDC setup and remain editable under Connection settings. Upload history, queue, and connection help use native disclosures; failed or uncertain uploads stay visible and open their history automatically.
 
 The page stays public. Ruby credentials remain in tab memory and travel directly to the local Ruby API. No request to the badges server carries the Ruby token. Nothing contacts Ruby or imports files on page load.
 

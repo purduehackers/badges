@@ -8,10 +8,12 @@ export default function RubyDiagnostics({
   connection,
   receipts,
   disabled,
+  rubyUrl,
 }: {
   connection: RubyConnection;
   receipts: RubyReceipt[];
   disabled: boolean;
+  rubyUrl: string;
 }) {
   const [report, setReport] = useState<RubyReport>();
   const [running, setRunning] = useState(false);
@@ -45,11 +47,19 @@ export default function RubyDiagnostics({
     }
   }
   return (
-    <details className="ruby-panel ruby-diagnostics">
-      <summary>Connection diagnostics</summary>
+    <details className="ruby-disclosure">
+      <summary>Connection help</summary>
       <p className="ruby-muted">
-        Collect a report if Ruby cannot connect or an import fails. The token is removed.
+        Keep Ruby running and allow local-network access. For certificate errors, check the setup
+        with BIDC staff.
       </p>
+      {rubyUrl && (
+        <p>
+          <a className="ruby-text-link" href={rubyUrl} target="_blank" rel="noreferrer">
+            Open Ruby ↗
+          </a>
+        </p>
+      )}
       <div className="ruby-actions">
         <button onClick={collect} disabled={disabled || running}>
           {running ? "Collecting…" : "Collect debug report"}
