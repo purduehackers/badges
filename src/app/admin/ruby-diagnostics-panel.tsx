@@ -32,13 +32,10 @@ export default function RubyDiagnostics({
       secureContext: isSecureContext,
       auth: { supplied: Boolean(connection.token), format: "personal-access-token" },
       checks: [],
-      notes: "",
     });
     try {
-      await collectRuby(
-        { ...connection, format: "personal-access-token", signal: AbortSignal.timeout(100_000) },
-        (check) =>
-          setReport((current) => current && { ...current, checks: [...current.checks, check] }),
+      await collectRuby({ ...connection, signal: AbortSignal.timeout(100_000) }, (check) =>
+        setReport((current) => current && { ...current, checks: [...current.checks, check] }),
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not collect diagnostics.");
@@ -64,22 +61,20 @@ export default function RubyDiagnostics({
         <button onClick={collect} disabled={disabled || running}>
           {running ? "Collecting…" : "Collect debug report"}
         </button>
-        <button
-          disabled={!report || running}
-          onClick={() =>
-            downloadReport(
-              redact(
-                { ...report, imports: receipts },
-                connection.token.trim().replace(/^PersonalAccessToken\s+/i, ""),
-              ),
-            )
-          }
-        >
-          Download report
-        </button>
-        <a className="ruby-text-link" href="/ruby-diagnostics.ps1" download>
-          Windows collector ↓
-        </a>
+        {report && !running && (
+          <button
+            onClick={() =>
+              downloadReport(
+                redact(
+                  { ...report, imports: receipts },
+                  connection.token.trim().replace(/^PersonalAccessToken\s+/i, ""),
+                ),
+              )
+            }
+          >
+            Download report
+          </button>
+        )}
       </div>
       {error && (
         <p role="alert" className="ruby-error">

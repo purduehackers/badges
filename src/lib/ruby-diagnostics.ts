@@ -1,38 +1,33 @@
-export const RUBY_SCHEMA_PATH = "/swagger/1.0-OpenApi/swagger.json";
-export const RUBY_CHECKS = [
+const RUBY_SCHEMA_PATH = "/swagger/1.0-OpenApi/swagger.json";
+const RUBY_CHECKS = [
   {
     name: "Device",
     path: "/api/OpenApi/GetDeviceStatus",
-    detail: "Connection, machine state, and device details",
     targeted: true,
   },
   {
     name: "Import profiles",
     path: "/api/OpenApi/GetImportProfiles",
-    detail: "Available profile names, IDs, and materials",
     targeted: true,
   },
   {
     name: "Designs",
     path: "/api/OpenApi/GetDesigns",
-    detail: "Saved design names and IDs",
     targeted: false,
   },
   {
     name: "Workbenches",
     path: "/api/OpenApi/GetWorkbenches",
-    detail: "Saved job names and IDs",
     targeted: false,
   },
   {
     name: "Queue",
     path: "/api/OpenApi/GetQueueElements",
-    detail: "Current queue entries and ordering",
     targeted: true,
   },
 ] as const;
 
-export type RubyCheck = {
+type RubyCheck = {
   name: string;
   path: string;
   state: "collected" | "blocked" | "needs-input" | "error";
@@ -51,9 +46,8 @@ export type RubyReport = {
   pageOrigin: string;
   userAgent: string;
   secureContext: boolean;
-  auth: { supplied: boolean; format: "personal-access-token" | "bearer" | "raw" };
+  auth: { supplied: boolean; format: "personal-access-token" };
   checks: RubyCheck[];
-  notes: string;
 };
 
 export function rubyOrigin(input: string): string {
@@ -167,23 +161,17 @@ export async function collectRuby(
     baseUrl: string;
     token: string;
     targetDevice?: string;
-    format: RubyReport["auth"]["format"];
     signal: AbortSignal;
   },
   onCheck: (check: RubyCheck) => void,
 ): Promise<void> {
   const baseUrl = rubyOrigin(options.baseUrl);
-  const token = options.token.trim().replace(/^(?:PersonalAccessToken|Bearer)\s+/i, "");
+  const token = options.token.trim().replace(/^PersonalAccessToken\s+/i, "");
   if (/[\r\n]/.test(token)) throw new Error("The token must be a single line.");
   const targetDevice = options.targetDevice?.trim();
   if (targetDevice && !/^[\x21-\x7e]+$/.test(targetDevice)) {
     throw new Error("Enter the laser’s serial number without spaces or line breaks.");
   }
-  const authorization = token
-    ? options.format === "raw"
-      ? token
-      : `${options.format === "bearer" ? "Bearer" : "PersonalAccessToken"} ${token}`
-    : undefined;
 
   async function probe(
     name: string,
@@ -204,7 +192,7 @@ export async function collectRuby(
                 ...(targeted && targetDevice ? { "x-target-device": targetDevice } : {}),
               }
             : {}),
-          ...(authenticated && authorization ? { Authorization: authorization } : {}),
+          ...(authenticated && token ? { Authorization: `PersonalAccessToken ${token}` } : {}),
         },
         mode: "cors",
         credentials: "omit",
@@ -215,29 +203,31 @@ export async function collectRuby(
       });
       status = response.status;
       const data = redact(await readRubyJson(response), token);
+      let state: RubyCheck["state"] = "collected";
+      if (!response.ok) {
+        state = [400, 401, 403].includes(status) ? "needs-input" : "error";
+      }
       return {
         name,
         path,
-        state: response.ok
-          ? "collected"
-          : status === 400 || status === 401 || status === 403
-            ? "needs-input"
-            : "error",
+        state,
         status,
         detail: responseDetail(status, path, data, Boolean(token)),
         data,
         durationMs: Math.round(performance.now() - start),
       };
     } catch (error) {
-      const detail = options.signal.aborted
-        ? "Stopped."
-        : error instanceof Error && error.name === "TimeoutError"
-          ? "No readable response within 15 seconds."
-          : error instanceof TypeError
-            ? "The browser could not read Ruby’s response. Check the certificate, local-network permission, and CORS; this result alone cannot identify which failed."
-            : error instanceof Error
-              ? error.message
-              : "Could not read this response.";
+      let detail = "Could not read this response.";
+      if (options.signal.aborted) {
+        detail = "Stopped.";
+      } else if (error instanceof Error && error.name === "TimeoutError") {
+        detail = "No readable response within 15 seconds.";
+      } else if (error instanceof TypeError) {
+        detail =
+          "The browser could not read Ruby’s response. Check the certificate, local-network permission, and CORS; this result alone cannot identify which failed.";
+      } else if (error instanceof Error) {
+        detail = error.message;
+      }
       return {
         name,
         path,
@@ -270,14 +260,12 @@ export async function collectRuby(
 }
 
 export function downloadReport(report: unknown): void {
-  downloadFile("ruby-diagnostics.json", JSON.stringify(report, undefined, 2), "application/json");
-}
-
-export function downloadFile(name: string, content: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type }));
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(report, undefined, 2)], { type: "application/json" }),
+  );
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = name;
+  anchor.download = "ruby-diagnostics.json";
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
