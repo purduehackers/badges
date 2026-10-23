@@ -216,9 +216,17 @@ export default function RubyAdmin() {
 
   return (
     <main className="ruby-admin">
-      <nav className="ruby-nav">
-        <Link href="/">
-          Purdue Hackers <span>/ Badges</span>
+      <nav className="ruby-nav" aria-label="Badge navigation">
+        <Link href="/" className="ruby-brand" aria-label="Purdue Hackers Badges home">
+          <svg viewBox="0 0 172 166" fill="none" aria-hidden="true">
+            <path
+              d="M57.333 166H0V110.667H57.333V166ZM114.667 55.333H172V166H114.667V110.667H57.333V0H114.667V55.333Z"
+              fill="currentColor"
+            />
+          </svg>
+          <span>
+            Purdue Hackers <span className="ruby-muted">/ Badges</span>
+          </span>
         </Link>
         <span className="ruby-tag">Bechtel · Production</span>
       </nav>
