@@ -111,10 +111,7 @@ export default function RubyAdmin() {
     setDevice(laser.status === "fulfilled" ? laser.value : undefined);
     setQueue(jobs.status === "fulfilled" ? jobs.value : undefined);
     setRefreshedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-    const errors = [laser, jobs]
-      .filter((result) => result.status === "rejected")
-      .map((result) => message(result.reason));
-    setQueueError(errors.join(" "));
+    setQueueError(jobs.status === "rejected" ? message(jobs.reason) : "");
     if (laser.status === "rejected") throw new Error(message(laser.reason));
   }
 
@@ -162,7 +159,14 @@ export default function RubyAdmin() {
       const result = await client.upload(item.file, receipt.id);
       persist(history.map((entry) => (entry.id === receipt.id ? { ...entry, ...result } : entry)));
       // An uncertain import must be checked before continuing a batch.
-      if (result.state !== "submitted") break;
+      if (result.state !== "submitted") {
+        setError(
+          result.state === "unknown"
+            ? "Couldn’t confirm the upload. Check Ruby before sending this file again."
+            : result.detail,
+        );
+        break;
+      }
     }
     await refresh(client);
   }
@@ -214,6 +218,16 @@ export default function RubyAdmin() {
     )
     .toReversed();
 
+  const uploaded = Boolean(
+    client &&
+    files.length &&
+    files.every(
+      (item) =>
+        duplicateImport(receipts, client.connection, item.digest, item.file.name)?.state ===
+        "submitted",
+    ),
+  );
+
   return (
     <main className="ruby-admin">
       <nav className="ruby-nav" aria-label="Badge navigation">
@@ -228,116 +242,86 @@ export default function RubyAdmin() {
             Purdue Hackers <span className="ruby-muted">/ Badges</span>
           </span>
         </Link>
-        <span className="ruby-tag">Bechtel · Production</span>
       </nav>
-      <header className="ruby-header">
-        <div className="ruby-eyebrow">FROM DESIGN TO CUTTING</div>
-        <h1>Make the badges.</h1>
-        <p>Send your cutting files to Ruby, set up the jobs, and keep an eye on the queue.</p>
-      </header>
-      <div className="ruby-grid">
-        <div className="ruby-stack">
-          <section className="ruby-panel">
-            <div className="ruby-section-heading">
-              <span className="ruby-number">01</span>
-              <h2>Connect to Ruby</h2>
+      <h1>Badge production</h1>
+      {client ? (
+        <div className="ruby-connection">
+          <p className="ruby-success">Connected to {client.connection.targetDevice}</p>
+          <button
+            className="ruby-text-button"
+            disabled={Boolean(busy)}
+            onClick={() => {
+              setClient(undefined);
+              setDevice(undefined);
+              setQueue(undefined);
+              setQueueError("");
+              setError("");
+              setToken("");
+            }}
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <form
+          className="ruby-connect"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run("Connecting…", async () => {
+              const next = rubyClient({ baseUrl, token, targetDevice });
+              await refresh(next);
+              setClient(next);
+            });
+          }}
+        >
+          <p className="ruby-muted">Connect to Ruby on the BIDC computer.</p>
+          <fieldset disabled={Boolean(busy)}>
+            <label htmlFor="ruby-token">Ruby token</label>
+            <div className="ruby-row">
+              <input
+                id="ruby-token"
+                type="password"
+                required
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Paste your Personal Access Token"
+              />
+              <button className="ruby-primary" type="submit">
+                {busy === "Connecting…" ? busy : "Connect"}
+              </button>
             </div>
-            {client ? (
-              <>
-                <p className="ruby-connected">Connected to {client.connection.targetDevice}</p>
-                <p className="ruby-muted">{client.connection.baseUrl}</p>
-                <div className="ruby-actions">
-                  <button
-                    disabled={Boolean(busy)}
-                    onClick={() => {
-                      setClient(undefined);
-                      setDevice(undefined);
-                      setQueue(undefined);
-                      setToken("");
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                  {rubyUrl && (
-                    <a className="ruby-button" href={rubyUrl} target="_blank" rel="noreferrer">
-                      Open Ruby ↗
-                    </a>
-                  )}
-                </div>
-              </>
-            ) : (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run("Connecting…", async () => {
-                    const next = rubyClient({ baseUrl, token, targetDevice });
-                    await refresh(next);
-                    setClient(next);
-                  });
-                }}
-              >
-                <p className="ruby-muted">Open this page on the BIDC computer with Ruby running.</p>
-                <fieldset disabled={Boolean(busy)}>
-                  <label htmlFor="ruby-address">Ruby API address</label>
-                  <input
-                    id="ruby-address"
-                    type="url"
-                    required
-                    value={baseUrl}
-                    onChange={(event) => setBaseUrl(event.target.value)}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <label htmlFor="ruby-token">Personal Access Token</label>
-                  <input
-                    id="ruby-token"
-                    type="password"
-                    required
-                    value={token}
-                    onChange={(event) => setToken(event.target.value)}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="Paste the Ruby token"
-                  />
-                  <p className="ruby-help">Kept in this tab and sent only to Ruby.</p>
-                  <label htmlFor="ruby-device">Laser serial number</label>
-                  <input
-                    id="ruby-device"
-                    required
-                    value={targetDevice}
-                    onChange={(event) => setTargetDevice(event.target.value)}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <div className="ruby-actions">
-                    <button className="ruby-primary" type="submit">
-                      {busy === "Connecting…" ? busy : "Connect"}
-                    </button>
-                    {rubyUrl && (
-                      <a className="ruby-text-link" href={rubyUrl} target="_blank" rel="noreferrer">
-                        Open Ruby ↗
-                      </a>
-                    )}
-                  </div>
-                </fieldset>
-                <p className="ruby-help">
-                  Allow local-network access if your browser asks. For a certificate error, open
-                  Ruby and check its certificate setup with BIDC staff.
-                </p>
-              </form>
-            )}
-          </section>
-          <section className="ruby-panel">
-            <div className="ruby-section-heading">
-              <span className="ruby-number">02</span>
-              <h2>Choose cutting files</h2>
-            </div>
-            <p className="ruby-muted">
-              Published files include the packed sheets and the mirrored stamp.
-            </p>
-            {releases.length > 0 && (
-              <div className="ruby-release-picker">
-                <label htmlFor="ruby-version">Hack Night</label>
+            <details className="ruby-settings">
+              <summary>Connection settings</summary>
+              <label htmlFor="ruby-address">Ruby API address</label>
+              <input
+                id="ruby-address"
+                type="url"
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <label htmlFor="ruby-device">Laser serial number</label>
+              <input
+                id="ruby-device"
+                value={targetDevice}
+                onChange={(event) => setTargetDevice(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="ruby-help">Your token stays in this tab and is sent only to Ruby.</p>
+            </details>
+          </fieldset>
+        </form>
+      )}
+      {client && (
+        <section className="ruby-files" aria-label="Cutting files">
+          {releases.length > 0 && (
+            <>
+              <label htmlFor="ruby-version">Hack Night</label>
+              <div className="ruby-row">
                 <select
                   id="ruby-version"
                   value={version}
@@ -375,12 +359,14 @@ export default function RubyAdmin() {
                     })
                   }
                 >
-                  Add published files
+                  {busy === "Loading files…" ? busy : "Load files"}
                 </button>
               </div>
-            )}
-            {catalogError && <p className="ruby-muted">{catalogError}</p>}
-            <label htmlFor="ruby-files">Or choose local SVG files</label>
+            </>
+          )}
+          {catalogError && <p className="ruby-help">{catalogError}</p>}
+          <label className="ruby-file-picker" htmlFor="ruby-files">
+            Choose local SVGs
             <input
               id="ruby-files"
               type="file"
@@ -393,24 +379,30 @@ export default function RubyAdmin() {
                 void run("Reading files…", () => addFiles(selected));
               }}
             />
-            {files.length > 0 && (
+          </label>
+          {files.length > 0 && (
+            <>
               <ul className="ruby-file-list">
                 {files.map((item) => {
-                  const previous =
-                    client &&
-                    duplicateImport(receipts, client.connection, item.digest, item.file.name);
+                  const previous = duplicateImport(
+                    receipts,
+                    client.connection,
+                    item.digest,
+                    item.file.name,
+                  );
                   return (
                     <li key={`${item.file.name}-${item.digest}`}>
                       <div>
                         <strong>{item.file.name}</strong>
-                        <span>{item.dimensions}</span>
-                        {previous && (
-                          <span className="ruby-connected">
-                            Import recorded · {stateLabel[previous.state]}
-                          </span>
+                        <p className="ruby-help">{item.dimensions}</p>
+                        {previous && !uploaded && (
+                          <p className={`ruby-status ${previous.state}`}>
+                            {stateLabel[previous.state]}
+                          </p>
                         )}
                       </div>
                       <button
+                        className="ruby-text-button"
                         disabled={Boolean(busy)}
                         aria-label={`Remove ${item.file.name}`}
                         onClick={() =>
@@ -423,182 +415,153 @@ export default function RubyAdmin() {
                   );
                 })}
               </ul>
-            )}
-            <div className="ruby-actions">
-              <button
-                className="ruby-primary"
-                disabled={!client || !historyReady || !pending.length || Boolean(busy)}
-                onClick={() =>
-                  void run("Sending files to Ruby…", async () => {
-                    if (!navigator.locks)
-                      throw new Error(
-                        "Use a current Chrome or Edge browser to track uploads safely.",
-                      );
-                    await navigator.locks.request(RECEIPTS_KEY, importFiles);
-                  })
-                }
-              >
-                {busy === "Sending files to Ruby…"
-                  ? busy
-                  : `Send ${pending.length || "files"}${pending.length ? ` file${pending.length === 1 ? "" : "s"}` : ""} to Ruby`}
-              </button>
-            </div>
-            <p className="ruby-help">
-              Files are sent unchanged, without an import profile. Finish their setup in Ruby.
-            </p>
-          </section>
-        </div>
-        <div className="ruby-stack">
-          <section className="ruby-panel ruby-queue">
-            <div className="ruby-section-heading">
-              <h2>Laser queue</h2>
-              <button
-                disabled={!client || Boolean(busy)}
-                onClick={() => client && void run("Refreshing…", () => refresh(client))}
-              >
-                Refresh
-              </button>
-            </div>
-            {device && (
-              <div className="ruby-device">
-                <span>
-                  {device.serialNo} · {device.status ?? "Status unavailable"}
-                </span>
-                {device.jobName && <strong>{device.jobName}</strong>}
-                {device.status === "Busy" && device.progress !== undefined && (
-                  <progress
-                    max={100}
-                    value={device.progress}
-                    aria-label="Current laser job progress"
-                  />
-                )}
-              </div>
-            )}
-            {queueError && (
-              <p role="alert" className="ruby-error">
-                {queueError}
-              </p>
-            )}
-            {queue ? (
-              queue.length ? (
-                <ol className="ruby-queue-list">
-                  {queue.map((job) => (
-                    <li key={job.id}>
-                      <span>{job.name ?? "Untitled job"}</span>
-                      <span
-                        className={`ruby-job-status ${job.status === "Running" ? "ruby-connected" : ""}`}
-                      >
-                        {job.status ?? "Unknown"}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
+              {uploaded ? (
+                <div className="ruby-handoff">
+                  <p>
+                    Files uploaded. Check the size, material, and placement in Ruby, then add the
+                    jobs to its queue.
+                  </p>
+                  <p className="ruby-help">Published stamps are already mirrored.</p>
+                  <a
+                    className="ruby-button ruby-primary"
+                    href={rubyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Continue in Ruby ↗
+                  </a>
+                </div>
               ) : (
-                <p className="ruby-empty">Ruby’s queue is empty.</p>
-              )
-            ) : (
-              <p className="ruby-empty">Connect to see the laser and its queued jobs.</p>
-            )}
-            {client && refreshedAt && (
-              <p className="ruby-help">Last checked at {refreshedAt}. Use Refresh to update.</p>
-            )}
-          </section>
-          <section className="ruby-panel ruby-handoff">
-            <div className="ruby-section-heading">
-              <span className="ruby-number">03</span>
-              <h2>Finish setup in Ruby</h2>
-            </div>
-            <ol>
-              <li>Find the imported designs and check their physical size.</li>
-              <li>Set the material, processing settings, and placement for each sheet.</li>
-              <li>Review the cutting preview, then add the jobs to Ruby’s queue.</li>
-            </ol>
-            <p className="ruby-help">
-              Published stamp files are already mirrored. Keep that orientation.
-            </p>
-            {rubyUrl && (
-              <a className="ruby-button" href={rubyUrl} target="_blank" rel="noreferrer">
-                Open Ruby ↗
-              </a>
-            )}
-          </section>
-        </div>
-      </div>
+                pending.length > 0 && (
+                  <button
+                    className="ruby-primary"
+                    disabled={!historyReady || Boolean(busy)}
+                    onClick={() =>
+                      void run("Sending files to Ruby…", async () => {
+                        if (!navigator.locks)
+                          throw new Error(
+                            "Use a current Chrome or Edge browser to track uploads safely.",
+                          );
+                        await navigator.locks.request(RECEIPTS_KEY, importFiles);
+                      })
+                    }
+                  >
+                    {busy === "Sending files to Ruby…"
+                      ? busy
+                      : `Send ${pending.length} file${pending.length === 1 ? "" : "s"} to Ruby`}
+                  </button>
+                )
+              )}
+            </>
+          )}
+        </section>
+      )}
       {busy && (
-        <p role="status" className="ruby-activity">
+        <p role="status" className="ruby-sr-only">
           {busy}
         </p>
       )}
       {error && (
-        <p role="alert" className="ruby-error ruby-page-error">
+        <p role="alert" className="ruby-error">
           {error}
         </p>
       )}
       {visibleReceipts.length > 0 && (
-        <section className="ruby-panel ruby-imports">
-          <div className="ruby-section-heading">
-            <h2>Import receipts</h2>
-            <button
-              disabled={Boolean(busy)}
-              onClick={() =>
-                downloadReport({
-                  version: 1,
-                  collectedAt: new Date().toISOString(),
-                  imports: visibleReceipts,
-                })
-              }
-            >
-              Download receipts
-            </button>
-          </div>
-          <p className="ruby-muted">
-            Saved in this browser to prevent repeat uploads. An accepted upload still needs setup in
-            Ruby.
-          </p>
+        <details
+          className="ruby-disclosure ruby-imports"
+          open={visibleReceipts[0]?.state === "unknown" || visibleReceipts[0]?.state === "rejected"}
+        >
+          <summary>Upload history</summary>
           <ul>
             {visibleReceipts.map((receipt) => (
               <li key={receipt.id}>
-                <div>
-                  <strong>{receipt.name}</strong>
-                  <span className={`ruby-receipt-state ${receipt.state}`}>
-                    {stateLabel[receipt.state]}
-                  </span>
-                  <p>{receipt.detail}</p>
-                  <details>
-                    <summary>Tracking number</summary>
-                    <code>{receipt.id}</code>
-                  </details>
-                </div>
-                <button
-                  disabled={
-                    Boolean(busy) || receipt.state === "sending" || receipt.state === "rejected"
-                  }
-                  onClick={() =>
-                    void run("Checking import…", async () => {
-                      if (!navigator.locks)
-                        throw new Error("Use a current Chrome or Edge browser to check imports.");
-                      await navigator.locks.request(RECEIPTS_KEY, () => checkImport(receipt));
-                    })
-                  }
-                >
-                  Check import
-                </button>
+                <strong>{receipt.name}</strong>
+                <p className={`ruby-status ${receipt.state}`}>{stateLabel[receipt.state]}</p>
+                {receipt.state !== "submitted" && <p className="ruby-help">{receipt.detail}</p>}
+                {receipt.state === "unknown" && (
+                  <button
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      void run("Checking import…", async () => {
+                        if (!navigator.locks)
+                          throw new Error("Use a current Chrome or Edge browser to check imports.");
+                        await navigator.locks.request(RECEIPTS_KEY, () => checkImport(receipt));
+                      })
+                    }
+                  >
+                    Check import
+                  </button>
+                )}
               </li>
             ))}
           </ul>
-        </section>
+          <button
+            disabled={Boolean(busy)}
+            onClick={() =>
+              downloadReport({
+                version: 1,
+                collectedAt: new Date().toISOString(),
+                imports: visibleReceipts,
+              })
+            }
+          >
+            Download receipts
+          </button>
+        </details>
+      )}
+      {client && (
+        <details className="ruby-disclosure" open={Boolean(queueError)}>
+          <summary>Laser queue{queue && ` · ${queue.length}`}</summary>
+          {device && (
+            <div className="ruby-device">
+              <p>
+                {device.status ?? "Status unavailable"}
+                {device.jobName && ` · ${device.jobName}`}
+              </p>
+              {device.status === "Busy" && device.progress !== undefined && (
+                <progress
+                  max={100}
+                  value={device.progress}
+                  aria-label="Current laser job progress"
+                />
+              )}
+            </div>
+          )}
+          {queueError && (
+            <p role="alert" className="ruby-error">
+              {queueError}
+            </p>
+          )}
+          {queue &&
+            (queue.length ? (
+              <ol className="ruby-queue-list">
+                {queue.map((job) => (
+                  <li key={job.id}>
+                    <span>{job.name ?? "Untitled job"}</span>
+                    <span className="ruby-muted">{job.status ?? "Unknown"}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="ruby-help">No queued jobs.</p>
+            ))}
+          <div className="ruby-actions">
+            <button
+              disabled={Boolean(busy)}
+              onClick={() => void run("Refreshing…", () => refresh(client))}
+            >
+              {busy === "Refreshing…" ? busy : "Refresh"}
+            </button>
+            {refreshedAt && <span className="ruby-help">Updated {refreshedAt}</span>}
+          </div>
+        </details>
       )}
       <RubyDiagnostics
         connection={client?.connection ?? { baseUrl, token, targetDevice }}
         receipts={receipts}
         disabled={Boolean(busy)}
+        rubyUrl={rubyUrl}
       />
-      <footer className="ruby-footer">
-        <span>Purdue Hackers · Badge production</span>
-        <a href="https://github.com/purduehackers/badge-designs" target="_blank" rel="noreferrer">
-          Published badge files ↗
-        </a>
-      </footer>
     </main>
   );
 }
