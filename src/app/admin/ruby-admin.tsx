@@ -32,6 +32,10 @@ const stateLabel = {
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong. Please try again.";
 
+function readReceipts() {
+  return z.array(receiptSchema).parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
+}
+
 export default function RubyAdmin() {
   const [baseUrl, setBaseUrl] = useState("https://localhost:5001");
   const [token, setToken] = useState("");
@@ -53,11 +57,8 @@ export default function RubyAdmin() {
 
   useEffect(() => {
     try {
-      const saved = z
-        .array(receiptSchema)
-        .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
       setReceipts(
-        saved.map((item) =>
+        readReceipts().map((item) =>
           item.state === "sending"
             ? {
                 ...item,
@@ -117,32 +118,27 @@ export default function RubyAdmin() {
 
   async function addFiles(incoming: File[]) {
     const prepared = await Promise.all(incoming.map(prepareSvg));
-    setFiles((current) => [
-      ...current,
-      ...prepared.filter(
-        (item, index) =>
-          !current.some(
-            (existing) => existing.digest === item.digest && existing.file.name === item.file.name,
-          ) &&
-          prepared.findIndex(
-            (other) => other.digest === item.digest && other.file.name === item.file.name,
-          ) === index,
-      ),
-    ]);
+    setFiles((current) => {
+      const next = [...current];
+      for (const item of prepared) {
+        if (
+          !next.some((other) => other.digest === item.digest && other.file.name === item.file.name)
+        )
+          next.push(item);
+      }
+      return next;
+    });
+  }
+
+  function saveReceipts(next: RubyReceipt[]) {
+    localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next));
+    setReceipts(next);
   }
 
   async function importFiles() {
     if (!client || !historyReady) return;
     const connection = client.connection;
-    const saved = z
-      .array(receiptSchema)
-      .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
-    let history = saved;
-    const persist = (next: RubyReceipt[]) => {
-      localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next));
-      history = next;
-      setReceipts(next);
-    };
+    let history = readReceipts();
     for (const item of files) {
       if (duplicateImport(history, connection, item.digest, item.file.name)) continue;
       const receipt: RubyReceipt = {
@@ -155,9 +151,11 @@ export default function RubyAdmin() {
         state: "sending",
         detail: "Waiting for Ruby’s upload response.",
       };
-      persist([...history, receipt]);
+      history = [...history, receipt];
+      saveReceipts(history);
       const result = await client.upload(item.file, receipt.id);
-      persist(history.map((entry) => (entry.id === receipt.id ? { ...entry, ...result } : entry)));
+      history = history.map((entry) => (entry.id === receipt.id ? { ...entry, ...result } : entry));
+      saveReceipts(history);
       // An uncertain import must be checked before continuing a batch.
       if (result.state !== "submitted") {
         setError(
@@ -177,24 +175,15 @@ export default function RubyAdmin() {
     const detail = jobs.length
       ? jobs.map((job) => `${job.name ?? receipt.name}: ${job.status ?? "found"}`).join("; ")
       : "No tracked queue entry yet. The design may still need setup in Ruby; do not re-upload based on this result alone.";
-    const saved = z
-      .array(receiptSchema)
-      .parse(JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]"));
-    const next = saved.map((item) =>
-      item.id === receipt.id
-        ? {
-            ...item,
-            state: jobs.length
-              ? ("submitted" as const)
-              : item.state === "sending"
-                ? ("unknown" as const)
-                : item.state,
-            detail,
-          }
-        : item,
+    saveReceipts(
+      readReceipts().map((item) => {
+        if (item.id !== receipt.id) return item;
+        let state = item.state;
+        if (jobs.length) state = "submitted";
+        else if (state === "sending") state = "unknown";
+        return { ...item, state, detail };
+      }),
     );
-    localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next));
-    setReceipts(next);
     await refresh(client);
   }
 
@@ -206,9 +195,16 @@ export default function RubyAdmin() {
   } catch {
     /* Validate the address on connect. */
   }
-  const pending = files.filter(
-    (item) => !client || !duplicateImport(receipts, client.connection, item.digest, item.file.name),
-  );
+  const selectedFiles = files.map((item) => ({
+    item,
+    receipt: client
+      ? duplicateImport(receipts, client.connection, item.digest, item.file.name)
+      : undefined,
+  }));
+  const pendingCount = selectedFiles.filter(({ receipt }) => !receipt).length;
+  const uploaded =
+    selectedFiles.length > 0 &&
+    selectedFiles.every(({ receipt }) => receipt?.state === "submitted");
   const visibleReceipts = receipts
     .filter(
       (item) =>
@@ -217,16 +213,6 @@ export default function RubyAdmin() {
         item.targetDevice.toLowerCase() === client.connection.targetDevice.toLowerCase(),
     )
     .toReversed();
-
-  const uploaded = Boolean(
-    client &&
-    files.length &&
-    files.every(
-      (item) =>
-        duplicateImport(receipts, client.connection, item.digest, item.file.name)?.state ===
-        "submitted",
-    ),
-  );
 
   return (
     <main className="ruby-admin">
@@ -383,37 +369,27 @@ export default function RubyAdmin() {
           {files.length > 0 && (
             <>
               <ul className="ruby-file-list">
-                {files.map((item) => {
-                  const previous = duplicateImport(
-                    receipts,
-                    client.connection,
-                    item.digest,
-                    item.file.name,
-                  );
-                  return (
-                    <li key={`${item.file.name}-${item.digest}`}>
-                      <div>
-                        <strong>{item.file.name}</strong>
-                        <p className="ruby-help">{item.dimensions}</p>
-                        {previous && !uploaded && (
-                          <p className={`ruby-status ${previous.state}`}>
-                            {stateLabel[previous.state]}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        className="ruby-text-button"
-                        disabled={Boolean(busy)}
-                        aria-label={`Remove ${item.file.name}`}
-                        onClick={() =>
-                          setFiles((current) => current.filter((file) => file !== item))
-                        }
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  );
-                })}
+                {selectedFiles.map(({ item, receipt }) => (
+                  <li key={`${item.file.name}-${item.digest}`}>
+                    <div>
+                      <strong>{item.file.name}</strong>
+                      <p className="ruby-help">{item.dimensions}</p>
+                      {receipt && !uploaded && (
+                        <p className={`ruby-status ${receipt.state}`}>
+                          {stateLabel[receipt.state]}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      className="ruby-text-button"
+                      disabled={Boolean(busy)}
+                      aria-label={`Remove ${item.file.name}`}
+                      onClick={() => setFiles((current) => current.filter((file) => file !== item))}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
               </ul>
               {uploaded ? (
                 <div className="ruby-handoff">
@@ -432,7 +408,7 @@ export default function RubyAdmin() {
                   </a>
                 </div>
               ) : (
-                pending.length > 0 && (
+                pendingCount > 0 && (
                   <button
                     className="ruby-primary"
                     disabled={!historyReady || Boolean(busy)}
@@ -448,7 +424,7 @@ export default function RubyAdmin() {
                   >
                     {busy === "Sending files to Ruby…"
                       ? busy
-                      : `Send ${pending.length} file${pending.length === 1 ? "" : "s"} to Ruby`}
+                      : `Send ${pendingCount} file${pendingCount === 1 ? "" : "s"} to Ruby`}
                   </button>
                 )
               )}

@@ -30,7 +30,7 @@ flowchart LR
 - Device and queue refreshes run together. HTTP 204 is shown as unavailable data, not an empty queue. `GetJobsStatus` is called only with a receipt's tracking number.
 - Import receipts are written to localStorage **before** each POST. Their identity includes filename, SHA-256, API origin, and laser serial. Two identical physical sheets with distinct filenames are separate jobs. Repeat selections of the same file are skipped. Web Locks serialize imports and receipt updates between tabs of the same site.
 - Network failures and server errors leave an uncertain receipt and stop the batch. Reloading retains it. Check the import or inspect Ruby instead of blindly retrying. Explicit validation/authentication rejections can be retried after correction. This is browser-local duplicate protection, not a guarantee across computers, cleared storage, or manually renamed files.
-- Connection diagnostics remain available, including schema export and the Windows PowerShell collector. Reports redact submitted tokens, JWTs, and credential fields. Reads have 15-second timeouts; uploads have a 60-second timeout and no automatic retries.
+- Browser diagnostics include the API schema, device, profiles, designs, workbenches, and queue. Reports redact submitted tokens, JWTs, and credential fields. Reads have 15-second timeouts; uploads have a 60-second timeout and no automatic retries.
 
 ## What is verified
 
@@ -48,6 +48,6 @@ Local verification covers published-file loading, unchanged multipart uploads, a
 4. Add the configured job to the queue in Ruby, then Refresh on `/admin`.
 5. If import fails or remains uncertain, download the diagnostic report and import receipts. Do not send a second copy until the first attempt is accounted for.
 
-The local origin is restricted to localhost, private IPv4, or the supplied BIDC hostnames. Network addresses require HTTPS. Requests omit cookies, reject redirects, and never follow URLs supplied by Ruby. The Windows collector uses normal certificate validation and does not alter machine settings.
+The local origin is restricted to localhost, private IPv4, or the supplied BIDC hostnames. Network addresses require HTTPS. Requests omit cookies, reject redirects, and never follow URLs supplied by Ruby.
 
 References: [Trotec Ruby REST API and profiles](https://www.troteclaser.com/en-gb/helpcenter/software/ruby/ruby-2-9), [Ruby 2.11 manual](https://www.troteclaser.com/static/pdf/Knowledge/ruby-help/Ruby_V2.11_SM_en-us.pdf), [Trotec Smart Add-on](https://www.troteclaser.com/en-us/helpcenter/software/ruby/ruby-workflow-tips/trotec-ruby-smart-add-on).

@@ -2,14 +2,14 @@ import { z } from "zod";
 import { readRubyJson, redact, rubyOrigin } from "./ruby-diagnostics";
 
 export type RubyConnection = { baseUrl: string; token: string; targetDevice: string };
-export const rubyJob = z.object({
+const rubyJob = z.object({
   id: z.string(),
   name: z.string().nullish(),
   status: z.string().nullish(),
   trackingNumber: z.string().nullish(),
 });
 export type RubyJob = z.infer<typeof rubyJob>;
-export const rubyDevice = z.object({
+const rubyDevice = z.object({
   serialNo: z.string(),
   model: z.string().nullish(),
   status: z.string().nullish(),
