@@ -4,16 +4,16 @@
   color-scheme: dark;
 }
 .ruby-admin {
-  --muted: #a2a2ab;
-  --line: #303034;
+  --muted: #9b9ba5;
+  --line: #2b2b30;
   --accent: #ffee00;
   --focus: #b99aff;
-  max-width: 760px;
+  max-width: 1320px;
   margin: auto;
-  padding: 0 28px 64px;
+  padding: 0 48px 28px;
   color: #f2f2f3;
   font-family: var(--font-polysans), sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .ruby-admin ::selection {
@@ -21,7 +21,12 @@
   color: #101012;
 }
 .ruby-nav {
-  padding: 32px 0 48px;
+  min-height: 106px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
 }
 .ruby-brand {
   display: inline-flex;
@@ -36,95 +41,95 @@
   flex-shrink: 0;
 }
 .ruby-admin h1 {
-  margin-bottom: 32px;
   font-family: var(--font-pixelhackers), monospace;
-  font-size: clamp(30px, 5vw, 40px);
+  font-size: clamp(34px, 4vw, 48px);
   font-weight: 400;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.035em;
   line-height: 1.15;
+  margin: 12px 0;
+}
+.ruby-admin h2 {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.ruby-admin h3 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.ruby-admin strong {
+  font-weight: 500;
 }
 .ruby-muted,
 .ruby-help {
   color: var(--muted);
 }
-.ruby-help,
-.ruby-status {
-  font-size: 13px;
-  margin-top: 6px;
+.ruby-help {
+  font-size: 12px;
+  line-height: 1.6;
 }
-.ruby-success,
-.ruby-status.submitted {
-  color: #a2d6b2;
+.ruby-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
-.ruby-status {
-  color: #e7cc8a;
+.ruby-page-heading {
+  padding: 40px 0 34px;
 }
-.ruby-status.rejected,
-.ruby-error {
-  color: #ffaaa2;
-}
-.ruby-admin fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
+.ruby-page-heading > p:last-child {
+  color: var(--muted);
+  margin-top: 12px;
+  font-size: 15px;
 }
 .ruby-admin label {
   display: block;
-  margin: 24px 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-}
-.ruby-row,
-.ruby-actions,
-.ruby-connection {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.ruby-row > input,
-.ruby-row > select {
-  flex: 1;
-  min-width: 0;
+  font-size: 13px;
 }
 .ruby-admin input,
 .ruby-admin select {
   width: 100%;
-  min-height: 44px;
+  min-height: 42px;
   padding: 10px 12px;
-  border: 1px solid #525259;
+  border: 1px solid #414148;
   border-radius: 5px;
-  background: #1b1b1e;
+  background: #1a1a1e;
   color: inherit;
-  font-size: 15px;
+  font-family: inherit;
+  font-size: 14px;
 }
 .ruby-admin input::placeholder {
-  color: var(--muted);
+  color: #777781;
 }
 .ruby-admin button,
-.ruby-button {
-  display: inline-block;
-  min-height: 44px;
+.ruby-button,
+.ruby-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 42px;
   padding: 10px 16px;
-  border: 1px solid #525259;
+  border: 1px solid #414148;
   border-radius: 5px;
-  background: #262629;
+  background: #202024;
   color: inherit;
-  font-size: 14px;
+  font-family: inherit;
+  font-size: 13px;
   font-weight: 500;
-  text-align: center;
   cursor: pointer;
-}
-.ruby-row > button {
-  flex-shrink: 0;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 .ruby-admin button:hover:not(:disabled),
-.ruby-button:hover {
-  background: #35353a;
+.ruby-button:hover,
+.ruby-upload-button:hover {
+  background: #303035;
 }
 .ruby-admin button:active:not(:disabled),
 .ruby-button:active {
-  background: #44444a;
+  background: #39393f;
 }
 .ruby-admin .ruby-primary {
   border-color: var(--accent);
@@ -138,20 +143,21 @@
   background: #d4c700;
 }
 .ruby-admin :is(button, input, select):disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 .ruby-admin :is(button, a, input, select, summary):focus-visible,
-.ruby-file-picker:focus-within {
+.ruby-upload-button:focus-within {
   outline: 2px solid var(--focus);
   outline-offset: 4px;
 }
 .ruby-admin .ruby-text-button {
   border: 0;
   padding: 4px 0;
-  min-height: 32px;
+  min-height: 30px;
   background: none;
   color: var(--muted);
+  font-size: 12px;
   font-weight: 400;
 }
 .ruby-admin .ruby-text-button:hover:not(:disabled) {
@@ -165,118 +171,696 @@
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+.ruby-admin .ruby-icon-button {
+  border: 0;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 23px;
+}
+.ruby-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.ruby-account small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+.ruby-account > button {
+  margin-left: 12px;
+}
+.ruby-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #2a2533;
+  color: #d0b7ff;
+}
+.ruby-steps {
+  display: flex;
+  gap: 32px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ruby-steps > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #777781;
+}
+.ruby-steps > span > span {
+  font-size: 10px;
+}
+.ruby-steps [aria-current] {
+  color: var(--accent);
+}
+.ruby-login {
+  max-width: 460px;
+  margin: 70px auto 90px;
+}
+.ruby-login > h1 {
+  font-size: clamp(36px, 4vw, 48px);
+  margin: 18px 0;
+}
+.ruby-login > p:not(.ruby-eyebrow) {
+  color: var(--muted);
+  max-width: 360px;
+}
+.ruby-login form {
+  margin-top: 32px;
+}
+.ruby-login label {
+  margin: 20px 0 8px;
+}
+.ruby-login form > button {
+  width: 100%;
+  justify-content: space-between;
+  margin: 28px 0 10px;
+}
 .ruby-admin summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--muted);
 }
 .ruby-admin summary:hover {
   color: #fff;
 }
 .ruby-settings {
-  margin-top: 24px;
+  margin-top: 18px;
 }
-.ruby-connection {
-  justify-content: space-between;
+.ruby-selection {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 48px;
 }
-.ruby-admin .ruby-file-picker {
-  position: relative;
-  display: inline-block;
-  margin: 12px 0 0;
-  padding: 8px 0;
-  font-weight: 400;
+.ruby-library {
+  border-right: 1px solid var(--line);
+  padding-right: 28px;
+}
+.ruby-library > label {
+  margin-bottom: 12px;
+}
+.ruby-library > .ruby-help {
+  margin: 18px 0;
+}
+.ruby-release-list,
+.ruby-file-list,
+.ruby-playlist ol,
+.ruby-review-summary ul,
+.ruby-diagnostic-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ruby-release-list {
+  margin-top: 20px;
+}
+.ruby-admin .ruby-release {
+  border: 0;
+  background: none;
+  width: 100%;
+  border-radius: 0;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.ruby-admin .ruby-release:hover:not(:disabled) {
+  background: #1a1a1d;
+}
+.ruby-release small {
+  display: block;
+  font-size: 11px;
+  margin-top: 3px;
   color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
-.ruby-file-picker input {
+.ruby-release strong {
+  font-size: 13px;
+}
+.ruby-release-art {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  background: #f3f2ef;
+  color: #28282c;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.ruby-release-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ruby-release-add {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ruby-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.ruby-section-heading h2 > span {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ruby-upload-button {
+  position: relative;
+  overflow: hidden;
+}
+.ruby-upload-button input {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 0;
-  padding: 0;
   opacity: 0;
   cursor: pointer;
 }
-.ruby-file-picker:has(input:disabled) {
-  opacity: 0.45;
+.ruby-upload-button:has(input:disabled) {
+  opacity: 0.4;
 }
-.ruby-file-picker input:disabled {
-  opacity: 0;
-}
-.ruby-file-list,
-.ruby-imports ul,
-.ruby-queue-list,
-.ruby-diagnostic-list {
-  list-style: none;
-  margin: 24px 0;
-  padding: 0;
-}
-.ruby-file-list li,
-.ruby-queue-list li {
+.ruby-empty-batch {
   display: flex;
-  justify-content: space-between;
-  gap: 20px;
-}
-.ruby-file-list li,
-.ruby-imports li,
-.ruby-queue-list li,
-.ruby-diagnostic-list li {
-  padding: 16px 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 310px;
+  text-align: center;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
+}
+.ruby-empty-batch > span {
+  font-size: 36px;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.ruby-empty-batch > p {
+  max-width: 310px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 12px 0;
+}
+.ruby-file-list li {
+  display: flex;
+  gap: 18px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
 }
 .ruby-file-list li:first-child {
   border-top: 1px solid var(--line);
 }
-.ruby-file-list li > div {
+.ruby-file-thumb {
+  flex-shrink: 0;
+  width: 68px;
+  height: 80px;
+  padding: 5px;
+  background: #f3f2ef;
+  border-radius: 3px;
+}
+.ruby-file-thumb img,
+.ruby-track-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ruby-file-info {
+  flex: 1;
   min-width: 0;
 }
-.ruby-file-list button,
-.ruby-queue-list .ruby-muted {
+.ruby-file-info > strong {
+  display: block;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ruby-file-info > p {
+  margin-top: 4px;
+}
+.ruby-file-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ruby-file-options label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.ruby-file-options select {
+  font-size: 11px;
+  min-height: 34px;
+  padding: 6px 24px 6px 8px;
+}
+.ruby-file-list li > button {
+  align-self: flex-start;
   flex-shrink: 0;
 }
-.ruby-admin strong {
-  font-weight: 500;
+.ruby-step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-top: 28px;
 }
-.ruby-handoff .ruby-button {
-  margin-top: 20px;
+.ruby-step-footer p {
+  font-size: 12px;
+  color: var(--muted);
 }
-.ruby-error {
-  margin-top: 20px;
-  font-size: 14px;
+.ruby-step-footer button {
+  flex-shrink: 0;
 }
-.ruby-disclosure {
-  margin-top: 28px;
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
+.ruby-review-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  gap: 48px;
 }
-.ruby-disclosure > p,
-.ruby-device,
-.ruby-actions {
-  margin-top: 20px;
+.ruby-design-set {
+  margin-bottom: 32px;
 }
-.ruby-actions {
-  flex-wrap: wrap;
+.ruby-design-set h2 {
+  margin-bottom: 18px;
 }
-.ruby-actions .ruby-help {
+.ruby-render-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+.ruby-render-pair > figure {
+  min-width: 0;
   margin: 0;
 }
-.ruby-imports li > button {
-  margin-top: 12px;
+.ruby-render-pair > figure:only-child {
+  grid-column: 1 / -1;
+  max-width: 380px;
+  width: 100%;
 }
-.ruby-device progress {
+.ruby-design-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #f3f2ef;
+  overflow: hidden;
+}
+.ruby-design-canvas {
+  height: 100%;
+  width: 100%;
+}
+.ruby-design-canvas canvas {
   display: block;
   width: 100%;
-  height: 5px;
+  height: 100%;
+  object-fit: contain;
+}
+.ruby-render-pair figcaption {
+  padding: 16px 0 0;
+}
+.ruby-render-pair figcaption strong {
+  display: block;
+  font-size: 13px;
+}
+.ruby-render-pair figcaption span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ruby-preview-loading {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ruby-preview-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  color: #4b4b50;
+  font-size: 11px;
+  text-align: center;
+  padding: 24px;
+}
+.ruby-preview-fallback img {
+  height: 70%;
+  width: 85%;
+  object-fit: contain;
+}
+.ruby-review-summary {
+  border-left: 1px solid var(--line);
+  padding-left: 30px;
+}
+.ruby-review-summary h2 {
+  margin: 8px 0 20px;
+}
+.ruby-review-summary li {
+  display: flex;
+  gap: 14px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ruby-review-summary li strong {
+  display: block;
+  font-size: 13px;
+}
+.ruby-review-summary li div > span,
+.ruby-review-summary details li {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ruby-quantity {
+  font-size: 20px;
+  color: var(--accent);
+}
+.ruby-review-summary > p.ruby-help {
+  margin: 24px 0;
+}
+.ruby-review-summary > button {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.ruby-disclosure {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.ruby-disclosure > p,
+.ruby-actions {
+  margin-top: 16px;
+}
+.ruby-disclosure > ul {
   margin-top: 12px;
-  accent-color: var(--accent);
+}
+.ruby-player-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  padding: 36px 0 26px;
+}
+.ruby-player-heading h1 {
+  margin-bottom: 0;
+}
+.ruby-player {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.ruby-playlist {
+  min-width: 0;
+  padding: 24px 0;
+  border-right: 1px solid var(--line);
+  background: #131316;
+}
+.ruby-playlist .ruby-section-heading {
+  padding: 0 20px;
+  margin-bottom: 20px;
+}
+.ruby-playlist h2 {
+  font-size: 14px;
+}
+.ruby-playlist .ruby-section-heading > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ruby-playlist ol {
+  max-height: 510px;
+  overflow-y: auto;
+}
+.ruby-playlist li > button {
+  display: flex;
+  width: 100%;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  padding: 16px 16px 16px 12px;
+  text-align: left;
+  gap: 10px;
+  justify-content: flex-start;
+}
+.ruby-playlist li > button.selected {
+  border-left-color: var(--accent);
+  background: #242329;
+}
+.ruby-track-number {
+  width: 18px;
+  flex-shrink: 0;
+  color: #777781;
+  font-size: 10px;
+}
+.ruby-track-art {
+  width: 48px;
+  height: 56px;
+  flex-shrink: 0;
+  background: #f3f2ef;
+  padding: 4px;
+  border-radius: 3px;
+}
+.ruby-track-name {
+  min-width: 0;
+}
+.ruby-track-name strong {
+  display: block;
+  font-size: 12px;
+}
+.ruby-track-name small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin: 3px 0;
+}
+.ruby-job-state {
+  font-size: 10px;
+  color: #b3b3bc;
+}
+.ruby-job-state.running,
+.ruby-job-state.finished {
+  color: #bad5a7;
+}
+.ruby-job-state.upload-rejected,
+.ruby-job-state.needs-attention {
+  color: #ffaaa2;
+}
+.ruby-playlist > p,
+.ruby-playlist > button {
+  margin: 20px 20px 0;
+}
+.ruby-player-main {
+  min-width: 0;
+  background: #151518;
+}
+.ruby-player-screen {
+  width: 100%;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-bottom: 1px solid var(--line);
+}
+.ruby-laser-canvas {
+  position: absolute;
+  inset: 0;
+}
+.ruby-laser-canvas canvas {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+.ruby-player-screen-top {
+  pointer-events: none;
+  position: absolute;
+  left: 20px;
+  top: 18px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #a7a7b2;
+}
+.ruby-live-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  background: #16161bcc;
+  border: 1px solid #3a3a42;
+  border-radius: 20px;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.ruby-live-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a1a1ab;
+}
+.ruby-live-status i.active {
+  background: var(--accent);
+}
+.ruby-schematic-label {
+  position: absolute;
+  bottom: 13px;
+  right: 20px;
+  pointer-events: none;
+  color: #9999a4;
+  font-size: 9px;
+}
+.ruby-now-playing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+}
+.ruby-now-playing > div {
+  min-width: 0;
+}
+.ruby-now-playing h2 {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
+}
+.ruby-now-playing > div > p:last-child {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ruby-now-playing > a {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.ruby-timeline {
+  padding: 0 24px 24px;
+}
+.ruby-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+  font-size: 10px;
+}
+.ruby-timeline-heading span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ruby-timeline-tracks {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.ruby-timeline-tracks > button {
+  position: relative;
+  min-width: 72px;
+  flex: 1;
+  font-size: 10px;
+  padding: 11px 9px;
+  min-height: 42px;
+  border-radius: 3px;
+  border: 1px solid #34343c;
+  background: #24242b;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-align: left;
+}
+.ruby-timeline-tracks > button.selected {
+  border-color: #aaa37d;
+}
+.ruby-timeline-tracks .ruby-track-progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #77741e;
+}
+.ruby-timeline-tracks button > span:last-child {
+  position: relative;
+}
+.ruby-timeline-time {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.ruby-error {
+  color: #ffaaa2;
+  padding: 18px 0;
+  font-size: 13px;
+  max-width: 840px;
+}
+.ruby-working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 20px;
+}
+.ruby-working > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ruby-admin-footer {
+  margin-top: 64px;
+  border-top: 1px solid var(--line);
+  padding: 22px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 30px;
+  color: #777781;
+  font-size: 11px;
+}
+.ruby-support {
+  max-width: 560px;
+  text-align: right;
+}
+.ruby-support > .ruby-disclosure {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+.ruby-support > button {
+  font-size: 10px;
+  margin-top: 8px;
+}
+.ruby-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ruby-diagnostic-list li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
 }
 .ruby-diagnostic-list span {
   display: block;
+  font-size: 11px;
   color: var(--muted);
-  font-size: 13px;
 }
 .ruby-sr-only {
   position: absolute;
@@ -286,21 +870,123 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (max-width: 480px) {
+@media (max-width: 1000px) {
+  .ruby-admin {
+    padding-inline: 28px;
+  }
+  .ruby-selection {
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 28px;
+  }
+  .ruby-review-grid {
+    gap: 24px;
+    grid-template-columns: minmax(0, 1fr) 245px;
+  }
+  .ruby-review-summary {
+    padding-left: 22px;
+  }
+  .ruby-player {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .ruby-track-number {
+    display: none;
+  }
+  .ruby-now-playing {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 720px) {
   .ruby-admin {
     padding-inline: 20px;
   }
   .ruby-nav {
-    padding-bottom: 36px;
+    min-height: 90px;
   }
-  .ruby-connect .ruby-row {
-    flex-wrap: wrap;
+  .ruby-brand > span {
+    max-width: 110px;
   }
-  .ruby-connect .ruby-row > input {
-    flex-basis: 100%;
+  .ruby-account {
+    gap: 8px;
+  }
+  .ruby-account > button {
+    margin-left: 0;
+  }
+  .ruby-avatar {
+    display: none;
+  }
+  .ruby-selection,
+  .ruby-review-grid,
+  .ruby-player {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ruby-library {
+    border: 0;
+    padding: 0;
+  }
+  .ruby-release-list {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    margin-bottom: 20px;
+  }
+  .ruby-release-list > li {
+    min-width: 210px;
+  }
+  .ruby-review-summary {
+    border: 0;
+    border-top: 1px solid var(--line);
+    padding: 24px 0 0;
+  }
+  .ruby-playlist {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ruby-playlist ol {
+    display: flex;
+    max-height: none;
+    overflow-x: auto;
+  }
+  .ruby-playlist li {
+    flex-shrink: 0;
+    width: 220px;
+  }
+  .ruby-step-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ruby-step-footer button {
+    width: 100%;
+  }
+  .ruby-file-list li {
+    gap: 12px;
+  }
+  .ruby-file-thumb {
+    width: 48px;
+    height: 66px;
+  }
+  .ruby-timeline-heading {
+    align-items: start;
+  }
+  .ruby-timeline-heading span {
+    max-width: 130px;
+    text-align: right;
+  }
+  .ruby-admin-footer {
+    margin-top: 40px;
+  }
+  .ruby-login {
+    margin-top: 44px;
   }
   .ruby-admin input,
   .ruby-admin select {
     font-size: 16px;
+  }
+  .ruby-file-options select {
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ruby-admin * {
+    transition: none !important;
   }
 }

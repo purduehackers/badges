@@ -39,7 +39,20 @@ export async function GET() {
     }
     return Response.json(
       [...releases]
-        .map(([version, files]) => ({ version, files }))
+        .map(([version, files]) => {
+          const asset = (name: string) => {
+            const path = `badges/${version}/${name}`;
+            return tree.tree.some((item) => item.type === "blob" && item.path === path)
+              ? `https://raw.githubusercontent.com/${repository}/${commit.sha}/${path.split("/").map(encodeURIComponent).join("/")}`
+              : undefined;
+          };
+          return {
+            version,
+            files,
+            badge: asset("badge.svg"),
+            badgeImage: asset("badge.png"),
+          };
+        })
         .sort((a, b) => b.version.localeCompare(a.version, "en", { numeric: true })),
     );
   } catch (error) {

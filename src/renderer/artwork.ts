@@ -14,6 +14,10 @@ export async function readArtwork(svg: string) {
   const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = document.importNode(parsed.documentElement, true);
   if (!(root instanceof SVGSVGElement)) throw new Error("Invalid SVG.");
+  // Our cutting sheets repeat this group. Preview the original badge, not every copy.
+  const drawing = root.querySelector("defs > g#badge-art");
+  const sheet = drawing && root.querySelector('use[href="#badge-art"]');
+  if (sheet) root.replaceChildren(drawing.cloneNode(true));
   for (const element of [root, ...root.querySelectorAll("*")]) {
     if (
       ![
@@ -46,6 +50,10 @@ export async function readArtwork(svg: string) {
   root.style.visibility = "hidden";
   document.body.append(root);
   try {
+    if (sheet) {
+      const bounds = root.getBBox();
+      root.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+    }
     const { x, y, width, height } = root.viewBox.baseVal;
     if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0)
       throw new Error("The SVG needs a valid viewBox.");

@@ -1,13 +1,23 @@
 import { z } from "zod";
 import { readRubyJson, redact, rubyOrigin } from "./ruby-diagnostics";
 
-export type RubyConnection = { baseUrl: string; token: string; targetDevice: string };
+export const connectionSchema = z.object({
+  baseUrl: z.string(),
+  token: z.string(),
+  targetDevice: z.string(),
+  displayName: z.string().optional(),
+});
+export type RubyConnection = z.infer<typeof connectionSchema>;
+export const CONNECTION_KEY = "ruby-connection-v1";
 export const RUBY_PROFILE_NAMES = {
   badge: "Purdue Hackers Badges",
   stamp: "Purdue Hackers Stamps",
 } as const;
 export type RubyFileKind = keyof typeof RUBY_PROFILE_NAMES;
-const rubyProfile = z.object({ id: z.uuid(), name: z.string().nullish() });
+const rubyProfile = z.object({
+  id: z.uuid(),
+  name: z.string().nullish(),
+});
 const rubyJob = z.object({
   id: z.string(),
   name: z.string().nullish(),
@@ -21,6 +31,11 @@ const rubyDevice = z.object({
   status: z.string().nullish(),
   jobName: z.string().nullish(),
   progress: z.number().optional(),
+  remainingTime: z.number().optional(),
+  issues: z
+    .array(z.object({ code: z.string(), extraInfo: z.string().nullish(), active: z.boolean() }))
+    .nullish(),
+  error: z.object({ code: z.string(), additionalInfo: z.string().nullish() }).nullish(),
 });
 export type RubyDevice = z.infer<typeof rubyDevice>;
 export const receiptSchema = z.object({
@@ -32,11 +47,57 @@ export const receiptSchema = z.object({
   startedAt: z.string(),
   profileId: z.uuid().optional(),
   profileName: z.string().optional(),
+  batchId: z.string().optional(),
+  rubyName: z.string().optional(),
+  jobIds: z.array(z.string()).optional(),
+  queueAttemptedAt: z.string().optional(),
+  queueError: z.string().optional(),
+  queuedAt: z.string().optional(),
+  jobs: z.array(rubyJob).optional(),
   state: z.enum(["sending", "submitted", "rejected", "unknown"]),
   detail: z.string(),
 });
 export type RubyReceipt = z.infer<typeof receiptSchema>;
 export const RECEIPTS_KEY = "ruby-imports-v1";
+
+export function rubyAccount(token: string) {
+  try {
+    const payload = token
+      .trim()
+      .replace(/^PersonalAccessToken\s+/i, "")
+      .split(".")[1];
+    const claims = z
+      .record(z.string(), z.unknown())
+      .parse(
+        JSON.parse(
+          new TextDecoder().decode(
+            Uint8Array.from(atob(payload.replaceAll("-", "+").replaceAll("_", "/")), (c) =>
+              c.charCodeAt(0),
+            ),
+          ),
+        ),
+      );
+    const text = (keys: string[]) =>
+      keys
+        .map((key) => claims[key])
+        .find((value): value is string => typeof value === "string" && Boolean(value));
+    return {
+      id: text([
+        "nameid",
+        "sub",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier",
+      ]),
+      name: text([
+        "name",
+        "unique_name",
+        "email",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+      ]),
+    };
+  } catch {
+    return {};
+  }
+}
 
 export function rubyClient(input: RubyConnection) {
   const baseUrl = rubyOrigin(input.baseUrl);
@@ -45,9 +106,9 @@ export function rubyClient(input: RubyConnection) {
   if (!token || /\s/.test(token)) throw new Error("Enter a Ruby Personal Access Token.");
   if (!/^[\x21-\x7e]+$/.test(targetDevice))
     throw new Error("Enter the laser’s serial number without spaces.");
-  const connection = { baseUrl, token, targetDevice };
+  const connection = { baseUrl, token, targetDevice, displayName: input.displayName?.trim() };
 
-  function request(path: string, body?: FormData) {
+  function request(path: string, body?: FormData | string) {
     return fetch(`${baseUrl}/api/OpenApi/${path}`, {
       method: body ? "POST" : "GET",
       body,
@@ -56,6 +117,7 @@ export function rubyClient(input: RubyConnection) {
         Authorization: `PersonalAccessToken ${token}`,
         "x-api-version": "1.0-OpenApi",
         "x-target-device": targetDevice,
+        ...(typeof body === "string" ? { "Content-Type": "application/json" } : {}),
       },
       mode: "cors",
       credentials: "omit",
@@ -108,6 +170,13 @@ export function rubyClient(input: RubyConnection) {
     async profiles() {
       return z.array(rubyProfile).parse(await read("GetImportProfiles"));
     },
+    async workbenches() {
+      return z.array(rubyJob).parse(await read("GetWorkbenches"));
+    },
+    async enqueue(ids: string[]) {
+      const response = await request("EnqueueWorkbench", JSON.stringify(ids));
+      if (!response.ok) throw new Error(await failure(response));
+    },
     async upload(
       file: File,
       trackingNumber: string,
@@ -121,7 +190,7 @@ export function rubyClient(input: RubyConnection) {
         if (response.ok)
           return {
             state: "submitted",
-            detail: "Ruby accepted the upload. Open Ruby to check the import.",
+            detail: "Creating the job in Ruby.",
           };
         return {
           state: [400, 401, 403, 413, 415, 422].includes(response.status) ? "rejected" : "unknown",
@@ -138,7 +207,9 @@ export function rubyClient(input: RubyConnection) {
 }
 
 function formatDimension(value: string) {
-  return value.replace(/^\d*\.?\d+/, (number) => Number(Number(number).toFixed(2)).toString());
+  const unit = value.trim().slice(-2).toLowerCase();
+  const inches = Number.parseFloat(value) / (unit === "mm" ? 25.4 : unit === "cm" ? 2.54 : 1);
+  return Number(inches.toFixed(2)).toString();
 }
 
 export async function prepareSvg(file: File) {
@@ -170,11 +241,12 @@ export async function prepareSvg(file: File) {
   return {
     file,
     digest,
+    svg: text,
     kind: (/(?:^|-)stamp\.svg$/i.test(file.name) ? "stamp" : "badge") as RubyFileKind,
     dimensions:
       dimension(width) && dimension(height)
-        ? `${formatDimension(width)} × ${formatDimension(height)}`
-        : "Physical size not specified — check the size in Ruby",
+        ? `${formatDimension(width)} × ${formatDimension(height)} in`
+        : "Size not specified. Check in Ruby.",
   };
 }
 
@@ -183,13 +255,16 @@ export function duplicateImport(
   connection: RubyConnection,
   digest: string,
   name: string,
+  batchId?: string,
+  includeRejected = false,
 ) {
-  return receipts.find(
+  return receipts.findLast(
     (item) =>
       item.digest === digest &&
       item.name === name &&
       item.baseUrl === connection.baseUrl &&
       item.targetDevice.toLowerCase() === connection.targetDevice.toLowerCase() &&
-      item.state !== "rejected",
+      (includeRejected || item.state !== "rejected") &&
+      item.batchId === batchId,
   );
 }

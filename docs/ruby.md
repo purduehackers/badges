@@ -1,54 +1,63 @@
-# Ruby production MVP
+# Badge production
 
-Open `/admin` on the BIDC computer running Ruby and its TrayApp. Choose published cutting files or local SVGs, connect to Ruby, and send the files using the appropriate Ruby import profile. The operator checks the imported files and queue in Ruby.
+Open `/admin` on the BIDC computer running Ruby and its TrayApp. The dark interface uses Purdue Hackers’ PolySans, PixelHackers, glider, and yellow actions.
 
-The dark-only admin page uses Purdue Hackers’ current [site identity](https://github.com/purduehackers/site2026): PolySans for interface text, PixelHackers for the heading, the glider mark, and yellow actions with purple focus indicators. The bundled fonts and glider come from that repository. These styles are scoped to `/admin`.
+## Select → Review → Produce
 
-The page follows one column: connect, select files, upload, then continue in Ruby. API address and laser serial default to the BIDC setup and remain editable under Connection settings. Upload history, queue, and connection help use native disclosures; failed or uncertain uploads stay visible and open their history automatically.
+1. **Connect.** Enter a Ruby Personal Access Token once. The API defaults to `https://localhost:5001`, targeting `X4-0436`. Connection settings remain editable. A successful device request establishes the connection.
+2. **Select.** Add one or more published Hack Night sets, or upload cutting SVGs. Choose each file’s role and acrylic. Published sheets supply their material and thickness through their filenames. Local files without that metadata default to ⅛-inch acrylic and require a color selection. Stamp cutting files must already be mirrored; their orientation is preserved when sent to Ruby.
+3. **Review.** Check the acrylic badge renders, finished stamp impressions, cutting files, and required materials. The local preview reverses a mirrored stamp to show its impression. It does not change the uploaded file. Published sets show each selected acrylic; local files each receive a preview. Unsupported artwork shows a labeled flat fallback.
+4. **Confirm.** “Looks good. Queue jobs” starts the batch. The page resolves both import profiles before uploading anything, then imports each file and observes its job in Ruby’s queue.
+5. **Produce.** The playlist shows the batch’s jobs. Selecting a thumbnail changes the laser schematic and file details. The timeline reflects Ruby’s job states and reported progress. Other users’ queue entries are counted but never modified.
 
-The page stays public. Ruby credentials remain in tab memory and travel directly to the local Ruby API. No request to the badges server carries the Ruby token. Nothing contacts Ruby or imports files on page load.
-
-`RUBY_API_TOKEN` is stored as a production Secret in Vercel. The public page does not retrieve it: a protected unlock must be chosen before adding saved-token access. Until then, paste the token into the local connection form. Never expose this variable through a public route or a `NEXT_PUBLIC_` variable.
-
-## Flow
+The laser view is an interactive schematic, not a camera feed or a live head-position simulation. Progress and remaining time are shown only when the device’s running job matches this batch. Estimated elapsed time is labeled with `~`. Connection failures hide live progress until reads recover. Starting the physical laser still uses **Open in Ruby**, which goes to `/app/produce`; the captured public API does not expose a start command.
 
 ```mermaid
 flowchart LR
-  A[Published cutting sheets and mirrored stamp] --> B[Admin page on BIDC]
-  L[Local SVG files] --> B
-  B -->|Explicit send, one tracking number per file| C[Ruby UploadFromMany]
-  C --> D[Import receipt in this browser]
-  D --> E[Open Ruby: inspect imported files]
-  E --> F[Check queue and complete setup]
-  F -->|Refresh, read only| B
+  A[Published sets or local SVGs] --> B[Material and render review]
+  B -->|Operator confirms| C[Resolve Ruby profiles]
+  C --> D[Upload one file with tracking ID]
+  D --> E[Observe job creation]
+  E --> F{Already queued by profile?}
+  F -->|Yes| H[Playlist and timeline]
+  F -->|No| G[Enqueue matching workbench]
+  G -->|Queue observed| H
+  H -->|Read status every 5 seconds| H
+  H --> I[Open Ruby Produce to start]
 ```
 
-- `/api/admin/releases` reads the public `purduehackers/badge-designs` repository, caches the catalog for one minute, and pins downloads to a commit. It lists cutting sheets and `stamp.svg`, excluding source designs and individual badge exports. A catalog failure leaves local uploads available.
-- SVG bytes, dimensions, and orientation are preserved. Published stamp files are already mirrored. Displayed dimensions are rounded for readability only; missing physical dimensions are called out for checking in Ruby.
-- Before uploading, the page fetches `GetImportProfiles` and resolves every pending file to exactly one named profile: `Purdue Hackers Badges` or `Purdue Hackers Stamps`. Published `stamp.svg` files default to the stamp profile; other files default to badges. Each file has a profile selector for local files or corrections. A missing or ambiguous profile stops the batch before any upload.
-- `UploadFromMany` receives one multipart `uploadedFiles` part per request. The request includes the selected `importProfileId`, `trackingNumber`, `PersonalAccessToken`, `x-api-version: 1.0-OpenApi`, and `x-target-device`. Profile IDs are fetched for each send rather than hardcoded. Import receipts record the profile ID and name; older receipts remain readable.
-- An HTTP success means Ruby accepted the upload. It does **not** establish that a design is configured, queued, or safe to cut. The page has no enqueue, delete, material-setting, or laser-start action.
-- Device and queue refreshes run together. HTTP 204 is shown as unavailable data, not an empty queue. `GetJobsStatus` is called only with a receipt's tracking number.
-- Import receipts are written to localStorage **before** each POST. Their identity includes filename, SHA-256, API origin, and laser serial. Two identical physical sheets with distinct filenames are separate jobs. Repeat selections of the same file are skipped. Web Locks serialize imports and receipt updates between tabs of the same site.
-- Network failures and server errors leave an uncertain receipt and stop the batch. Reloading retains it. Check the import or inspect Ruby instead of blindly retrying. Explicit validation/authentication rejections can be retried after correction. This is browser-local duplicate protection, not a guarantee across computers, cleared storage, or manually renamed files.
-- Browser diagnostics include the API schema, device, profiles, designs, workbenches, and queue. Reports redact submitted tokens, JWTs, and credential fields. Reads have 15-second timeouts; uploads have a 60-second timeout and no automatic retries.
+## Browser storage and identity
 
-## What is verified
+- `ruby-connection-v1` in localStorage holds the token, API origin, device serial, and optional display name. Reloading reconnects with a read-only device request. **Sign out** removes the saved credentials and stops this page’s connection; it does not cancel jobs already accepted by Ruby. Other open tabs also disconnect when credentials change.
+- The account name comes from the token’s name/email claim when present. Otherwise the operator can give this machine a display name. The token’s account ID appears in the account tooltip. Decoded claims are display information; Ruby validates the token.
+- IndexedDB `ruby-production` / `batch` retains the selected files, material choices, and batch ID. localStorage `ruby-imports-v1` retains import receipts, tracking IDs, and queue observations. Reloading restores the batch without automatically uploading or enqueueing. **Check queue** explicitly resumes an interrupted confirmed batch.
+- **New batch** creates a new batch ID, allowing an intentional repeat of the same files. Signing out preserves the files and receipts so a later connection can resume.
+- The public page never retrieves `RUBY_API_TOKEN` from Vercel. The browser sends credentials directly to Ruby, not to the badges backend. Credentials must never be included in a public route or `NEXT_PUBLIC_` variable.
 
-The October 22 BIDC reports establish direct browser access and PersonalAccessToken authentication. With `x-target-device: X4-0436`, the API identifies a Speedy 400 Flexx, its active job/progress, and 13 queue entries. The operator confirmed that the laser was connected and no import profiles existed.
+## Ruby integration
 
-The October 29 BIDC report records `ERR_IMPORTPROFILE_002` (HTTP 400) for profile-free uploads and lists the newly created `Purdue Hackers Badges` (Acrylic 1/8) and `Purdue Hackers Stamps` (2.3mm) profiles. Although the OpenAPI schema marks `importProfileId` optional, this upload flow now supplies it explicitly. The API exposes profile names and material labels, not their processing settings. The operator has accepted these profiles; the website does not modify them.
+`/api/admin/releases` reads `purduehackers/badge-designs`, caches the catalog for one minute, and pins its assets to one commit. Cutting sheets and `stamp.svg` are sent to Ruby; `badge.svg` supplies the individual badge render. A catalog failure leaves local uploads available. Locally uploaded sheets exported by this application can also render their original `badge-art` group.
 
-Local verification covers published-file loading, unchanged multipart uploads, accepted/rejected/uncertain outcomes, tracking recovery, duplicate prevention, and the browser queue UI against a simulated Ruby API. It does not verify the laser, imported geometry, or processing parameters.
+The import profiles are **Purdue Hackers Badges** (Acrylic 1/8) and **Purdue Hackers Stamps** (2.3mm). Their processing settings are owned by Ruby and were accepted by the operator. Profiles must create a job; a profile that only saves a design cannot be promoted to a job by the captured public API. The website does not change processing parameters.
 
-## On-site check
+`UploadFromMany` receives one multipart `uploadedFiles` part, `importProfileId`, and a unique `trackingNumber`. SVG bytes, dimensions, and orientation are unchanged. The Ruby filename includes a unique suffix to correlate a workbench when Ruby omits tracking information. Requests use `Authorization: PersonalAccessToken …`, `x-api-version: 1.0-OpenApi`, and `x-target-device`.
 
-1. Open `/admin` on BIDC, enter the token, and connect to `https://localhost:5001` with serial `X4-0436`.
-2. Choose the cutting SVGs, check each file’s profile, and send them. Confirm Ruby accepts the uploads with their profile IDs.
-3. Open Ruby at port 2402. Inspect the imported dimensions, orientation, artwork, and material settings.
-4. Check whether the profiles already queued the jobs before adding any, then Refresh on `/admin`.
-5. If import fails or remains uncertain, download the diagnostic report and import receipts. Do not send a second copy until the first attempt is accounted for.
+An HTTP upload success means **accepted**, not **queued**. The app polls `GetJobsStatus` and `GetQueueElements`. It gives the import profile time to complete its own queue action before checking `GetWorkbenches`. After another queue read, it submits only matching workbench UUIDs as a JSON array to `EnqueueWorkbench`. A queued state requires a subsequent API observation.
 
-The local origin is restricted to localhost, private IPv4, or the supplied BIDC hostnames. Network addresses require HTTPS. Requests omit cookies, reject redirects, and never follow URLs supplied by Ruby.
+Receipts are saved before each upload and enqueue attempt. Filename, SHA-256, batch ID, API origin, and serial identify an import. Web Locks serialize batch sends between tabs. Files already accepted within that batch are not uploaded again. Two identical sheets with distinct filenames remain separate jobs.
 
-References: [Trotec Ruby REST API and profiles](https://www.troteclaser.com/en-gb/helpcenter/software/ruby/ruby-2-9), [Ruby 2.11 manual](https://www.troteclaser.com/static/pdf/Knowledge/ruby-help/Ruby_V2.11_SM_en-us.pdf), [Trotec Smart Add-on](https://www.troteclaser.com/en-us/helpcenter/software/ruby/ruby-workflow-tips/trotec-ruby-smart-add-on).
+Uncertain uploads, queue errors, missing profiles, and errored jobs stop the remaining batch. A lost enqueue response is reconciled through reads, without automatically repeating the POST. Explicit upload validation rejections can be retried. This is browser-local duplicate protection; it cannot guarantee deduplication after cleared storage, across computers, or against changes made directly in Ruby. Ruby’s asynchronous profile actions and explicit enqueue still need an on-site check.
+
+Reads time out after 15 seconds; uploads after 60 seconds. Queue observation waits are bounded and can be resumed. API origins are restricted to localhost, private IPv4, or the BIDC hostnames; network addresses require HTTPS. Requests omit cookies and reject redirects. Diagnostic reports redact tokens and credential fields.
+
+## Verification
+
+The October 22 BIDC reports established direct browser access and PersonalAccessToken authentication. With `x-target-device: X4-0436`, the API identifies a Speedy 400 Flexx, its active job/progress, and queue entries.
+
+The October 29 report supplied the two import profiles and the public API schema. The operator subsequently confirmed that profile-based uploads worked. The schema exposes uploads, workbenches, enqueue, and status; it does not expose start/pause/stop or an account-name endpoint.
+
+Browser checks against a simulated Ruby API cover profile-driven and explicit queuing, delayed job creation, unchanged SVG bytes, confirmation before writes, missing profiles, uncertain uploads, rejected imports, enqueue failures, batch restoration, repeat batches, login storage, render output, and mobile layout. No physical laser was operated during these checks.
+
+On BIDC, confirm one batch produces the expected number of jobs, with the intended profiles, dimensions, orientation, and material settings. Download **Connection help → Collect debug report** if job creation or queue correlation differs from the simulated API.
+
+References: [Ruby REST API and profiles](https://www.troteclaser.com/en-gb/helpcenter/software/ruby/ruby-2-9), [Ruby 2.11 manual](https://www.troteclaser.com/static/pdf/Knowledge/ruby-help/Ruby_V2.11_SM_en-us.pdf).
