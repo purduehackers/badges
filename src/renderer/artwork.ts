@@ -32,16 +32,24 @@ export async function readArtwork(svg: string) {
         "line",
         "title",
         "desc",
+        "defs",
+        "clipPath",
       ].includes(element.localName)
     )
       throw new Error("Export plain vector shapes to preview this design.");
     if (
-      [...element.attributes].some(
-        (attribute) =>
+      [...element.attributes].some((attribute) => {
+        // Figma clips artwork to a frame using a definition inside the same SVG.
+        const clip =
+          attribute.name === "clip-path" &&
+          /^url\(\s*(['"]?)#([\w.:-]+)\1\s*\)$/iu.exec(attribute.value.trim());
+        const localClip = clip && root.getElementById(clip[2]!)?.localName === "clipPath";
+        return (
           /^on/iu.test(attribute.name) ||
           /href/iu.test(attribute.name) ||
-          /url\s*\(/iu.test(attribute.value),
-      )
+          (/url\s*\(/iu.test(attribute.value) && !localClip)
+        );
+      })
     )
       throw new Error("Linked artwork is not supported.");
   }
@@ -58,7 +66,8 @@ export async function readArtwork(svg: string) {
     if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0)
       throw new Error("The SVG needs a valid viewBox.");
     const cuts = [...root.querySelectorAll("path")].filter(
-      (path) => getComputedStyle(path).stroke === "rgb(255, 0, 0)",
+      (path) =>
+        !path.closest("defs, clipPath") && getComputedStyle(path).stroke === "rgb(255, 0, 0)",
     );
     if (cuts.length !== 1) throw new Error("Expected one cut outline.");
     const cut = cuts[0]!;
