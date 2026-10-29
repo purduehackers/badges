@@ -207,7 +207,7 @@ export default function RubyAdmin() {
   try {
     const url = new URL(rubyOrigin(baseUrl));
     url.port = "2402";
-    rubyUrl = url.origin;
+    rubyUrl = `${url.origin}/app/produce`;
   } catch {
     /* Validate the address on connect. */
   }
