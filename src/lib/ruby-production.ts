@@ -2,6 +2,12 @@ import { z } from "zod";
 import { readRubyJson, redact, rubyOrigin } from "./ruby-diagnostics";
 
 export type RubyConnection = { baseUrl: string; token: string; targetDevice: string };
+export const RUBY_PROFILE_NAMES = {
+  badge: "Purdue Hackers Badges",
+  stamp: "Purdue Hackers Stamps",
+} as const;
+export type RubyFileKind = keyof typeof RUBY_PROFILE_NAMES;
+const rubyProfile = z.object({ id: z.uuid(), name: z.string().nullish() });
 const rubyJob = z.object({
   id: z.string(),
   name: z.string().nullish(),
@@ -24,6 +30,8 @@ export const receiptSchema = z.object({
   baseUrl: z.string(),
   targetDevice: z.string(),
   startedAt: z.string(),
+  profileId: z.uuid().optional(),
+  profileName: z.string().optional(),
   state: z.enum(["sending", "submitted", "rejected", "unknown"]),
   detail: z.string(),
 });
@@ -61,6 +69,8 @@ export function rubyClient(input: RubyConnection) {
   async function failure(response: Response) {
     const data = await readRubyJson(response).catch(() => undefined);
     const code = z.object({ code: z.string() }).safeParse(data);
+    if (code.success && code.data.code === "ERR_IMPORTPROFILE_002")
+      return "Ruby rejected the import profile. Check that it still exists in Ruby, then try again.";
     return response.status === 401 || response.status === 403
       ? "Ruby rejected the token or its permissions."
       : `Ruby returned ${code.success ? `${String(redact(code.data.code, token))} · ` : ""}HTTP ${response.status}.`;
@@ -95,22 +105,23 @@ export function rubyClient(input: RubyConnection) {
         .array(rubyJob)
         .parse(await read(`GetJobsStatus?trackingNumber=${encodeURIComponent(trackingNumber)}`));
     },
+    async profiles() {
+      return z.array(rubyProfile).parse(await read("GetImportProfiles"));
+    },
     async upload(
       file: File,
       trackingNumber: string,
+      importProfileId: string,
     ): Promise<Pick<RubyReceipt, "state" | "detail">> {
       const form = new FormData();
       form.append("uploadedFiles", file, file.name);
+      const query = new URLSearchParams({ trackingNumber, importProfileId });
       try {
-        const response = await request(
-          `UploadFromMany?trackingNumber=${encodeURIComponent(trackingNumber)}`,
-          form,
-        );
+        const response = await request(`UploadFromMany?${query}`, form);
         if (response.ok)
           return {
             state: "submitted",
-            detail:
-              "Ruby accepted the upload. Open Ruby to check the import and configure the job.",
+            detail: "Ruby accepted the upload. Open Ruby to check the import.",
           };
         return {
           state: [400, 401, 403, 413, 415, 422].includes(response.status) ? "rejected" : "unknown",
@@ -159,6 +170,7 @@ export async function prepareSvg(file: File) {
   return {
     file,
     digest,
+    kind: (/(?:^|-)stamp\.svg$/i.test(file.name) ? "stamp" : "badge") as RubyFileKind,
     dimensions:
       dimension(width) && dimension(height)
         ? `${formatDimension(width)} × ${formatDimension(height)}`
