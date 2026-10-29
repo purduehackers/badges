@@ -9,6 +9,7 @@ import {
   prepareSvg,
   receiptSchema,
   RECEIPTS_KEY,
+  RUBY_PROFILE_NAMES,
   rubyClient,
   type RubyDevice,
   type RubyJob,
@@ -139,8 +140,21 @@ export default function RubyAdmin() {
     if (!client || !historyReady) return;
     const connection = client.connection;
     let history = readReceipts();
-    for (const item of files) {
-      if (duplicateImport(history, connection, item.digest, item.file.name)) continue;
+    const pending = files.filter(
+      (item) => !duplicateImport(history, connection, item.digest, item.file.name),
+    );
+    if (!pending.length) return;
+    const profiles = await client.profiles();
+    const imports = pending.map((item) => {
+      const name = RUBY_PROFILE_NAMES[item.kind];
+      const matches = profiles.filter((profile) => profile.name === name);
+      const profile = matches[0];
+      if (!profile) throw new Error(`Create the “${name}” profile in Ruby, then try again.`);
+      if (matches.length > 1)
+        throw new Error(`More than one Ruby profile is named “${name}”. Give them unique names.`);
+      return { item, profile };
+    });
+    for (const { item, profile } of imports) {
       const receipt: RubyReceipt = {
         id: `ph-${crypto.randomUUID()}`,
         name: item.file.name,
@@ -148,12 +162,14 @@ export default function RubyAdmin() {
         baseUrl: connection.baseUrl,
         targetDevice: connection.targetDevice,
         startedAt: new Date().toISOString(),
+        profileId: profile.id,
+        profileName: RUBY_PROFILE_NAMES[item.kind],
         state: "sending",
         detail: "Waiting for Ruby’s upload response.",
       };
       history = [...history, receipt];
       saveReceipts(history);
-      const result = await client.upload(item.file, receipt.id);
+      const result = await client.upload(item.file, receipt.id, profile.id);
       history = history.map((entry) => (entry.id === receipt.id ? { ...entry, ...result } : entry));
       saveReceipts(history);
       // An uncertain import must be checked before continuing a batch.
@@ -374,6 +390,20 @@ export default function RubyAdmin() {
                     <div>
                       <strong>{item.file.name}</strong>
                       <p className="ruby-help">{item.dimensions}</p>
+                      <select
+                        aria-label={`Ruby profile for ${item.file.name}`}
+                        value={item.kind}
+                        disabled={Boolean(busy) || Boolean(receipt)}
+                        onChange={(event) => {
+                          const kind = event.target.value === "stamp" ? "stamp" : "badge";
+                          setFiles((current) =>
+                            current.map((file) => (file === item ? { ...file, kind } : file)),
+                          );
+                        }}
+                      >
+                        <option value="badge">{RUBY_PROFILE_NAMES.badge}</option>
+                        <option value="stamp">{RUBY_PROFILE_NAMES.stamp}</option>
+                      </select>
                       {receipt && !uploaded && (
                         <p className={`ruby-status ${receipt.state}`}>
                           {stateLabel[receipt.state]}
@@ -393,10 +423,7 @@ export default function RubyAdmin() {
               </ul>
               {uploaded ? (
                 <div className="ruby-handoff">
-                  <p>
-                    Files uploaded. Check the size, material, and placement in Ruby, then add the
-                    jobs to its queue.
-                  </p>
+                  <p>Files uploaded. Check the size, material, placement, and queue in Ruby.</p>
                   <p className="ruby-help">Published stamps are already mirrored.</p>
                   <a
                     className="ruby-button ruby-primary"
