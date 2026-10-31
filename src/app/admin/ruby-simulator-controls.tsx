@@ -55,19 +55,22 @@ export default function RubySimulatorControls({
   }
   const disabled = busy || changing;
   const pending = state.jobs.some((job) => job.status !== "Finished");
+  const needsAlignment = state.jobs.some((job) => job.status === "NeedsAlignment");
   return (
     <section className="ruby-simulator" aria-label="Simulator controls">
       <div className="ruby-simulator-toolbar">
         <button
           className="ruby-primary"
-          disabled={disabled || !pending || state.lidOpen || state.offline}
+          disabled={disabled || !pending || state.lidOpen || state.offline || needsAlignment}
           onClick={() => void change({ type: state.playing ? "pause" : "start" })}
         >
-          {state.playing
-            ? "Pause"
-            : state.jobs.some((job) => job.status === "Paused")
-              ? "Resume"
-              : "Start queue"}
+          {needsAlignment
+            ? "Align stamp below"
+            : state.playing
+              ? "Pause"
+              : state.jobs.some((job) => job.status === "Paused")
+                ? "Resume"
+                : "Start queue"}
         </button>
         <label>
           Playback speed

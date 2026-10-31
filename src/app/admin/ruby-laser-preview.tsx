@@ -3,22 +3,34 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { stockMaterial } from "@/lib/materials";
 import type { ProductionFile } from "@/lib/ruby-batch";
+import { RUBY_BED, svgPhysicalSize, type BedPoint } from "@/lib/ruby-bed";
 import { svgImage } from "./ruby-design-preview";
 
-export default function LaserPreview({ file }: { file?: ProductionFile }) {
+type Vector = [number, number, number];
+
+export default function LaserPreview({
+  file,
+  origin,
+}: {
+  file?: ProductionFile;
+  origin?: BedPoint;
+}) {
   const viewport = useRef<HTMLDivElement>(null);
   const [error, setError] = useState(false);
+  const originX = origin?.x,
+    originY = origin?.y;
+  const size = file ? svgPhysicalSize(file.svg) : undefined;
   useEffect(() => {
     const target = viewport.current;
     if (!target) return;
     setError(false);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#101113");
-    const camera = new THREE.PerspectiveCamera(34, 16 / 9, 1, 1000);
-    camera.position.set(118, 125, 180);
-    camera.lookAt(0, 20, 0);
+    scene.background = new THREE.Color("#141518");
+    const camera = new THREE.PerspectiveCamera(36, 16 / 9, 1, 10000);
+    camera.position.set(1860, 1800, 2520);
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -28,95 +40,190 @@ export default function LaserPreview({ file }: { file?: ProductionFile }) {
     }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute(
       "aria-label",
-      "Interactive schematic of the Speedy 400 laser and selected cutting sheet",
+      "Speedy 400 flexx model with a 1016 by 610 millimeter bed and material at physical scale",
     );
     target.append(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 20, 0);
+    controls.target.set(0, -80, 0);
     controls.enablePan = false;
-    controls.minDistance = 130;
-    controls.maxDistance = 280;
-    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.minDistance = 1100;
+    controls.maxDistance = 4200;
+    controls.maxPolarAngle = Math.PI * 0.49;
     controls.update();
-    const materials: THREE.Material[] = [];
-    const geometries: THREE.BufferGeometry[] = [];
-    function box(size: number[], position: number[], color: string, roughness = 0.55) {
-      const geometry = new THREE.BoxGeometry(...(size as [number, number, number]));
-      const material = new THREE.MeshStandardMaterial({ color, roughness });
+    const textures: THREE.Texture[] = [];
+    function box(
+      size: Vector,
+      position: Vector,
+      color: string,
+      parent: THREE.Object3D = scene,
+      radius = 0,
+    ) {
+      const geometry = radius
+        ? new RoundedBoxGeometry(...size, 2, radius)
+        : new THREE.BoxGeometry(...size);
+      const material = new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.12 });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...(position as [number, number, number]));
-      scene.add(mesh);
-      materials.push(material);
-      geometries.push(geometry);
+      mesh.position.set(...position);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
       return mesh;
     }
-    // Schematic enclosure; positions are illustrative, never machine telemetry.
-    box([112, 15, 78], [0, 0, 0], "#d5d6d8");
-    box([110, 3, 76], [0, -9, 0], "#202228");
-    box([105, 2, 70], [0, 9, 0], "#24272b");
-    box([6, 14, 76], [-53, 15, 0], "#c9cbce");
-    box([6, 14, 76], [53, 15, 0], "#c9cbce");
-    box([112, 17, 8], [0, 16, -36], "#c82f3c");
-    box([112, 10, 7], [0, 12, 36], "#c9cbce");
-    box([18, 1, 5], [37, 18, 36], "#181b21");
-    box([2, 1.2, 2], [43, 19, 36], "#ca3b43");
-    for (let x = -45; x <= 45; x += 5) box([0.25, 0.3, 61], [x, 10.2, 0], "#494b4e");
-    for (let z = -30; z <= 30; z += 5) box([92, 0.3, 0.25], [0, 10.2, z], "#494b4e");
-    box([3, 3, 65], [-46, 15, 0], "#24262b");
-    box([3, 3, 65], [46, 15, 0], "#24262b");
-    box([91, 3, 3], [0, 18, -22], "#9ba0a6");
-    box([7, 9, 7], [-32, 16, -22], "#2b2e35");
-    box([3, 3, 3], [-32, 10, -22], "#b19361");
-    const lid = box([104, 1.5, 65], [0, 48, -50], "#90313b", 0.25);
-    lid.rotation.x = -0.9;
-    const lidMaterial = lid.material as THREE.MeshStandardMaterial;
-    lidMaterial.transparent = true;
-    lidMaterial.opacity = 0.22;
-    const floor = box([240, 1, 200], [0, -12, 0], "#18191c");
+    // Millimeter scale, based on Trotec's 8070 machine overview and technical drawing.
+    // The enclosure is illustrative; the working area and SVG footprint use physical dimensions.
+    box([1380, 710, 870], [0, -375, 0], "#25272b", scene, 16);
+    box([1390, 105, 900], [0, -795, 0], "#191b20", scene, 10);
+    for (const x of [-630, 630]) {
+      box([166, 950, 940], [x, -350, 0], "#d9d9d7", scene, 16);
+      box([150, 15, 900], [x, 125, 0], "#eeeeeb", scene, 5);
+      box([26, 9, 670], [Math.sign(x) * 553, 14, 0], "#999c9e", scene, 2);
+      for (const z of [-355, 355]) box([65, 50, 70], [x, -845, z], "#15171b", scene, 18);
+    }
+    box([1090, 330, 35], [0, -130, 422], "#b91e2c", scene, 12);
+    box([1090, 14, 24], [0, 43, 408], "#761824", scene, 4);
+    box([1090, 70, 35], [0, 76, -405], "#d1d2d2", scene, 7);
+    box([1100, 130, 70], [0, 76, -450], "#dfdfdd", scene, 8);
+    box([1096, 30, 698], [0, -22, 0], "#1c1e20");
+    box([RUBY_BED.width, 10, RUBY_BED.height], [0, 0, 0], "#292c2e");
+    const grid: number[] = [];
+    for (let x = -RUBY_BED.width / 2; x <= RUBY_BED.width / 2; x += 25.4)
+      grid.push(x, 5.2, -RUBY_BED.height / 2, x, 5.2, RUBY_BED.height / 2);
+    for (let z = -RUBY_BED.height / 2; z <= RUBY_BED.height / 2; z += 25.4)
+      grid.push(-RUBY_BED.width / 2, 5.2, z, RUBY_BED.width / 2, 5.2, z);
+    const gridGeometry = new THREE.BufferGeometry();
+    gridGeometry.setAttribute("position", new THREE.Float32BufferAttribute(grid, 3));
+    scene.add(
+      new THREE.LineSegments(gridGeometry, new THREE.LineBasicMaterial({ color: "#52565a" })),
+    );
+    // Side rails and carriage. Only a chosen simulator origin positions the pointer.
+    for (const x of [-530, 530]) box([22, 24, 678], [x, 33, 0], "#383b3f", scene, 3);
+    const headX = (originX ?? 50) - RUBY_BED.width / 2;
+    const headZ = (originY ?? 35) - RUBY_BED.height / 2;
+    box([1060, 40, 43], [0, 91, headZ - 25], "#b1b4b7", scene, 3);
+    box([55, 40, 58], [headX, 80, headZ - 12], "#b6212e", scene, 5);
+    box([34, 55, 34], [headX, 39, headZ], "#34373b", scene, 4);
+    if (originX !== undefined) {
+      const pointer = new THREE.Mesh(
+        new THREE.CircleGeometry(4, 24),
+        new THREE.MeshBasicMaterial({ color: "#ff3030" }),
+      );
+      pointer.rotation.x = -Math.PI / 2;
+      pointer.position.set(headX, 10, headZ);
+      scene.add(pointer);
+    }
+    // Right console: recessed display, physical keypad, and emergency stop.
+    const consolePanel = box([108, 12, 260], [630, 140, 150], "#b4b7b9", scene, 6);
+    consolePanel.rotation.x = 0.12;
+    box([88, 9, 130], [630, 150, 150], "#22252a", scene, 5);
+    box([70, 3, 106], [630, 156, 150], "#496d76", scene, 2);
+    for (const x of [607, 630, 653])
+      for (const z of [240, 262]) box([14, 7, 14], [x, 148, z], "#44484c", scene, 4);
+    const stop = new THREE.Mesh(
+      new THREE.CylinderGeometry(16, 16, 20, 24),
+      new THREE.MeshStandardMaterial({ color: "#cf2430" }),
+    );
+    stop.position.set(630, 156, -8);
+    scene.add(stop);
+    box([43, 5, 43], [630, 144, -8], "#d8b72d", scene, 5);
+    // Hinged blue acrylic lid with a solid black frame and front handle.
+    const lid = new THREE.Group();
+    lid.position.set(0, 150, -410);
+    lid.rotation.x = -1.02;
+    scene.add(lid);
+    for (const x of [-554, 554]) box([26, 25, 800], [x, 0, 400], "#1b2025", lid, 4);
+    for (const z of [12, 788]) box([1134, 25, 26], [0, 0, z], "#171b20", lid, 4);
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(1080, 5, 748),
+      new THREE.MeshPhysicalMaterial({
+        color: "#578c9e",
+        metalness: 0,
+        roughness: 0.14,
+        transparent: true,
+        opacity: 0.34,
+        transmission: 0.15,
+        thickness: 5,
+        side: THREE.DoubleSide,
+      }),
+    );
+    glass.position.set(0, 0, 400);
+    lid.add(glass);
+    box([280, 22, 28], [0, 16, 755], "#15191d", lid, 8);
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 1024;
+    labelCanvas.height = 128;
+    const labelContext = labelCanvas.getContext("2d")!;
+    labelContext.fillStyle = "#f1f1f1";
+    labelContext.font = "italic bold 70px sans-serif";
+    labelContext.fillText("trotec", 12, 88);
+    labelContext.font = "38px sans-serif";
+    labelContext.fillText("SPEEDY 400 FLEXX", 550, 80);
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+    textures.push(labelTexture);
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(920, 115),
+      new THREE.MeshBasicMaterial({ map: labelTexture, transparent: true }),
+    );
+    label.position.set(0, -130, 441);
+    scene.add(label);
+    const floor = box([4000, 10, 3500], [0, -877, 0], "#1d1f23");
     floor.material.roughness = 1;
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x343844, 2.3));
-    const key = new THREE.DirectionalLight(0xffffff, 3);
-    key.position.set(-50, 110, 70);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x525967, 2.6));
+    const key = new THREE.DirectionalLight(0xffffff, 3.3);
+    key.position.set(-800, 2200, 1400);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, {
+      left: -1800,
+      right: 1800,
+      top: 1800,
+      bottom: -1800,
+      near: 1,
+      far: 6000,
+    });
+    key.shadow.bias = -0.0003;
     scene.add(key);
-    const rim = new THREE.DirectionalLight(0xb3bedf, 1.5);
-    rim.position.set(80, 50, -50);
+    const rim = new THREE.DirectionalLight(0xc4d6ee, 1.5);
+    rim.position.set(1200, 600, -1000);
     scene.add(rim);
     const draw = () => renderer.render(scene, camera);
     let cancelled = false;
-    let texture: THREE.Texture | undefined;
-    if (file) {
+    const footprint = file ? svgPhysicalSize(file.svg) : undefined;
+    if (file && footprint && (file.kind !== "stamp" || originX !== undefined)) {
       const image = new window.Image();
       image.src = svgImage(file.svg);
       void image
         .decode()
         .then(() => {
           if (cancelled) return;
-          const aspect = image.naturalWidth / Math.max(image.naturalHeight, 1);
-          const width = Math.min(39, 48 * aspect),
-            height = width / aspect;
-          const materialColor =
+          const { width, height } = footprint;
+          const x = -RUBY_BED.width / 2 + (originX ?? 0) + width / 2;
+          const z = -RUBY_BED.height / 2 + (originY ?? 0) + height / 2;
+          const thickness = file.kind === "stamp" ? 2.3 : file.thicknessMm;
+          const color =
             file.kind === "stamp"
-              ? "#77716d"
+              ? "#b3a797"
               : (stockMaterial(file.materialId ?? "")?.color ?? "#a2b4c6");
-          box([width, 0.5, height], [-10, 10.8, 4], materialColor, 0.3);
-          texture = new THREE.Texture(image);
+          box([width, thickness, height], [x, 6 + thickness / 2, z], color);
+          const texture = new THREE.Texture(image);
           texture.needsUpdate = true;
           texture.colorSpace = THREE.SRGBColorSpace;
-          const material = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            opacity: 0.83,
-            side: THREE.DoubleSide,
-          });
-          const geometry = new THREE.PlaneGeometry(width, height);
-          const artwork = new THREE.Mesh(geometry, material);
+          textures.push(texture);
+          const artwork = new THREE.Mesh(
+            new THREE.PlaneGeometry(width, height),
+            new THREE.MeshBasicMaterial({
+              map: texture,
+              transparent: true,
+              side: THREE.DoubleSide,
+            }),
+          );
           artwork.rotation.x = -Math.PI / 2;
-          artwork.position.set(-10, 11.1, 4);
+          artwork.position.set(x, 6.2 + thickness, z);
           scene.add(artwork);
-          materials.push(material);
-          geometries.push(geometry);
           draw();
         })
         .catch(() => {
@@ -136,16 +243,33 @@ export default function LaserPreview({ file }: { file?: ProductionFile }) {
       cancelled = true;
       resize.disconnect();
       controls.dispose();
-      texture?.dispose();
-      for (const geometry of geometries) geometry.dispose();
-      for (const material of materials) material.dispose();
+      for (const texture of textures) texture.dispose();
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+          object.geometry.dispose();
+          for (const material of Array.isArray(object.material)
+            ? object.material
+            : [object.material])
+            material.dispose();
+        }
+      });
+      key.shadow.map?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [file]);
+  }, [file, originX, originY]);
   return (
     <div className="ruby-laser-canvas" ref={viewport}>
       {error && <p>Laser preview unavailable. Your queue is still live.</p>}
+      {!error && file && (
+        <span className="ruby-material-scale">
+          {!size
+            ? "Physical size unavailable"
+            : file.kind === "stamp" && !origin
+              ? "Stamp position not set"
+              : `${file.dimensions} · actual scale`}
+        </span>
+      )}
     </div>
   );
 }

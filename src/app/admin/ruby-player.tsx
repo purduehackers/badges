@@ -11,6 +11,7 @@ import {
   type RubyReceipt,
 } from "@/lib/ruby-production";
 import { FileThumbnail } from "./ruby-design-preview";
+import RubyStampPlacement from "./ruby-stamp-placement";
 
 const LaserPreview = dynamic(() => import("./ruby-laser-preview"), {
   ssr: false,
@@ -29,6 +30,7 @@ function jobLabel(receipt?: RubyReceipt) {
   const states = receipt.jobs?.map((job) => job.status) ?? [];
   if (states.includes("Erroneous")) return "Needs attention";
   if (states.includes("Running")) return "Running";
+  if (states.includes("NeedsAlignment")) return "Needs alignment";
   if (states.includes("Paused")) return "Paused";
   if (states.length && states.every((state) => state === "Finished")) return "Finished";
   if (states.includes("Removed")) return "Removed from queue";
@@ -47,6 +49,7 @@ export default function RubyPlayer({
   rubyUrl,
   onCheck,
   onNew,
+  onSimulationChange,
 }: {
   files: ProductionFile[];
   receipts: RubyReceipt[];
@@ -58,6 +61,7 @@ export default function RubyPlayer({
   rubyUrl: string;
   onCheck(): void;
   onNew(): void;
+  onSimulationChange(): void;
 }) {
   const [selection, setSelection] = useState<number>();
   const entries = files.map((file) => {
@@ -69,7 +73,9 @@ export default function RubyPlayer({
       file.batchId,
       true,
     );
-    const job = receipt?.jobs?.find((item) => ["Running", "Paused"].includes(item.status ?? ""));
+    const job = receipt?.jobs?.find((item) =>
+      ["Ready", "Running", "Paused", "NeedsAlignment"].includes(item.status ?? ""),
+    );
     const tracked =
       !stale &&
       job &&
@@ -83,7 +89,9 @@ export default function RubyPlayer({
       tracked,
       running: tracked && job?.status === "Running",
       progress:
-        tracked && typeof device?.progress === "number"
+        tracked &&
+        ["Running", "Paused"].includes(job.status ?? "") &&
+        typeof device?.progress === "number"
           ? Math.max(0, Math.min(100, device.progress))
           : undefined,
     };
@@ -94,9 +102,10 @@ export default function RubyPlayer({
   const file = current?.file,
     receipt = current?.receipt;
   const active = current?.running;
+  const selectedJob = receipt?.jobs?.[0];
   const progress = current?.progress;
   const remaining =
-    current?.tracked && device?.remainingTime && device.remainingTime > 0
+    progress !== undefined && device?.remainingTime && device.remainingTime > 0
       ? device.remainingTime
       : undefined;
   const elapsed =
@@ -170,7 +179,7 @@ export default function RubyPlayer({
         </aside>
         <section className="ruby-player-main" aria-label="Laser player">
           <div className="ruby-player-screen">
-            <LaserPreview file={file} />
+            <LaserPreview file={file} origin={selectedJob?.simulatedOrigin} />
             <div className="ruby-player-screen-top">
               <span className="ruby-live-status">
                 <i className={active ? "active" : ""} />
@@ -178,7 +187,7 @@ export default function RubyPlayer({
               </span>
               <span>{device?.model?.replaceAll("_", " ") ?? "SPEEDY 400 FLEXX"}</span>
             </div>
-            <span className="ruby-schematic-label">Laser schematic · drag to rotate</span>
+            <span className="ruby-schematic-label">40 × 24 in work area · drag to rotate</span>
           </div>
           <div className="ruby-now-playing">
             <div>
@@ -202,6 +211,29 @@ export default function RubyPlayer({
               </button>
             )}
           </div>
+          {file?.kind === "stamp" &&
+            (connection.simulated && selectedJob ? (
+              <RubyStampPlacement
+                key={selectedJob.id}
+                connection={connection}
+                file={file}
+                job={selectedJob}
+                busy={busy || stale}
+                onAligned={onSimulationChange}
+              />
+            ) : (
+              <section className="ruby-stamp-placement" aria-label="Stamp alignment">
+                <h3>Align your stamp in Ruby</h3>
+                <p>
+                  Move the laser pointer to unused rubber. Align the stamp’s top-left corner with
+                  that point in Ruby before starting.
+                </p>
+                <p className="ruby-help">
+                  This page cannot read the pointer position or tell which rubber has already been
+                  used.
+                </p>
+              </section>
+            ))}
           {receipt?.queueError && (
             <p className="ruby-error" role="alert">
               {receipt.queueError}

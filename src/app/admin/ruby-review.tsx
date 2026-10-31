@@ -79,6 +79,12 @@ export default function RubyReview({
               </li>
             ))}
           </ul>
+          {files.some((file) => file.kind === "stamp") && (
+            <p className="ruby-help">
+              Each stamp needs unused rubber. Before engraving, align the laser pointer with the
+              stamp’s top-left corner.
+            </p>
+          )}
           <details className="ruby-disclosure">
             <summary>{files.length} cutting files</summary>
             <ul>
