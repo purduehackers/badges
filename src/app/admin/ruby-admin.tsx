@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { downloadReport } from "@/lib/ruby-diagnostics";
 import {
   loadRelease,
   productionFile,
@@ -30,8 +29,11 @@ import RubyDiagnostics from "./ruby-diagnostics-panel";
 import RubySelection from "./ruby-selection";
 import RubyReview from "./ruby-review";
 import RubyPlayer from "./ruby-player";
-import RubySimulatorControls from "./ruby-simulator-controls";
-import { createSimulation, readSimulation, SIMULATOR_CONNECTION_KEY } from "@/lib/ruby-simulator";
+import {
+  controlSimulation,
+  createSimulation,
+  SIMULATOR_CONNECTION_KEY,
+} from "@/lib/ruby-simulator";
 import "./ruby-admin.css";
 
 type Client = ReturnType<typeof rubyClient>;
@@ -108,8 +110,7 @@ export default function RubyAdmin() {
         if (!raw) return;
         setConnection(value);
         const restored = rubyClient(value);
-        const laser =
-          value.simulated && readSimulation(value).offline ? undefined : await restored.device();
+        const laser = await restored.device();
         if (cancelled) return;
         activeClient.current = restored;
         setClient(restored);
@@ -251,8 +252,7 @@ export default function RubyAdmin() {
   }
   async function connect(value = connection) {
     const current = rubyClient(value);
-    const laser =
-      value.simulated && readSimulation(value).offline ? undefined : await current.device();
+    const laser = await current.device();
     const saved = await savedBatch(undefined, value.simulated ? "simulated" : "current");
     setFiles(saved);
     batchId.current = saved.length ? saved[0].batchId : crypto.randomUUID();
@@ -339,13 +339,12 @@ export default function RubyAdmin() {
         </Link>
         {client && (
           <div className="ruby-account">
-            <span className="ruby-avatar" aria-hidden="true">
-              {displayName.slice(0, 1).toUpperCase()}
-            </span>
             <span title={account.id ? `Ruby account ${account.id}` : undefined}>
               <strong>{displayName}</strong>
               <small>
-                {client.connection.simulated ? "Browser simulator" : client.connection.targetDevice}
+                {client.connection.simulated
+                  ? "Simulation · this browser only"
+                  : client.connection.targetDevice}
               </small>
             </span>
             {!client.connection.simulated && (
@@ -370,7 +369,7 @@ export default function RubyAdmin() {
       {!client ? (
         <section className="ruby-login">
           <h1>Badge production</h1>
-          <p>Connect to Ruby on the BIDC computer. Your login stays in this browser.</p>
+          <p>Connect to Ruby on the BIDC computer.</p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -434,49 +433,19 @@ export default function RubyAdmin() {
             >
               Use simulated laser
             </button>
-            <p className="ruby-help">
-              Test the full workflow in this browser, including the queue and timing.
-            </p>
+            <p className="ruby-help">Try the workflow without a laser.</p>
           </div>
         </section>
       ) : (
         <>
-          {client.connection.simulated && (
-            <p className="ruby-simulation-notice">
-              Simulation · Files and jobs stay in this browser.
-            </p>
-          )}
           <nav className="ruby-steps" aria-label="Production steps">
             {(["select", "review", "produce"] as const).map((step, index) => (
               <span key={step} aria-current={phase === step ? "step" : undefined}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                {step === "select" ? "Select" : step === "review" ? "Review" : "Produce"}
+                <span>{index + 1}</span>
+                {step === "select" ? "Choose" : step === "review" ? "Review" : "Produce"}
               </span>
             ))}
           </nav>
-          {client.connection.simulated && (
-            <RubySimulatorControls
-              key={client.connection.targetDevice}
-              connection={client.connection}
-              busy={Boolean(busy)}
-              onChange={() => setRefresh((value) => value + 1)}
-              onReset={async () => {
-                const remaining = readReceipts().filter(
-                  (receipt) =>
-                    receipt.baseUrl !== client.connection.baseUrl ||
-                    receipt.targetDevice !== client.connection.targetDevice,
-                );
-                localStorage.setItem(RECEIPTS_KEY, JSON.stringify(remaining));
-                history.current = remaining;
-                setReceipts(remaining);
-                setQueue([]);
-                setDevice(undefined);
-                setStatusError("");
-                setError("");
-                setPhase(files.length ? "review" : "select");
-              }}
-            />
-          )}
           {phase === "select" && (
             <RubySelection
               releases={releases}
@@ -518,12 +487,15 @@ export default function RubyAdmin() {
               busy={Boolean(busy)}
               rubyUrl={rubyUrl}
               onCheck={() => void run("Checking jobs…", produce)}
+              onEdit={() => setPhase("select")}
               onSimulationChange={() => setRefresh((value) => value + 1)}
               onNew={() =>
                 void run("Starting a new batch…", async () => {
+                  setPhase("select");
                   await updateFiles([]);
                   batchId.current = crypto.randomUUID();
-                  setPhase("select");
+                  if (client.connection.simulated)
+                    await controlSimulation(client.connection, { type: "newBatch" });
                 })
               }
             />
@@ -557,14 +529,6 @@ export default function RubyAdmin() {
                 disabled={Boolean(busy)}
                 rubyUrl={rubyUrl}
               />
-            )}
-            {visibleReceipts.length > 0 && (
-              <button
-                className="ruby-text-button"
-                onClick={() => downloadReport({ version: 1, imports: visibleReceipts })}
-              >
-                Download upload history
-              </button>
             )}
           </div>
         )}

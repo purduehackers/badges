@@ -33,7 +33,7 @@ export default function RubySelection({
     <>
       <div className="ruby-page-heading">
         <h1>Choose designs</h1>
-        <p>Choose published designs or bring your own cutting files.</p>
+        <p>Add a published set or upload your cutting SVGs.</p>
       </div>
       <div className="ruby-selection">
         <aside className="ruby-library">
@@ -91,7 +91,7 @@ export default function RubySelection({
         <section className="ruby-batch-selection" aria-label="Selected cutting files">
           <div className="ruby-section-heading">
             <h2>
-              Your batch <span>{files.length || ""}</span>
+              Cutting files <span>{files.length || ""}</span>
             </h2>
             <label className="ruby-upload-button">
               Upload SVGs
@@ -110,9 +110,7 @@ export default function RubySelection({
           </div>
           {!files.length && (
             <div className="ruby-empty-batch">
-              <span aria-hidden="true">↗</span>
-              <h3>Your batch is empty</h3>
-              <p>Add a published set, or upload badge sheets and mirrored stamp SVGs.</p>
+              <p>Your selected files will appear here.</p>
             </div>
           )}
           <ul className="ruby-file-list">
@@ -177,20 +175,22 @@ export default function RubySelection({
               </li>
             ))}
           </ul>
-          <div className="ruby-step-footer">
-            <p>
-              {missingMaterial
-                ? "Choose acrylic for each badge sheet."
-                : "You’ll check the renders and materials next."}
-            </p>
-            <button
-              className="ruby-primary"
-              disabled={busy || !files.length || missingMaterial}
-              onClick={onReview}
-            >
-              Review batch <span aria-hidden="true">→</span>
-            </button>
-          </div>
+          {files.length > 0 && (
+            <div className="ruby-step-footer">
+              <p>
+                {missingMaterial
+                  ? "Choose acrylic for each badge sheet."
+                  : "Stamp cutting files must already be mirrored."}
+              </p>
+              <button
+                className="ruby-primary"
+                disabled={busy || !files.length || missingMaterial}
+                onClick={onReview}
+              >
+                Review batch
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </>
