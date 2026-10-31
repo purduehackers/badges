@@ -5,7 +5,7 @@ import svgpath from "svgpath";
 
 import { checkIds, hash } from "./contracts.ts";
 import type { Check } from "./contracts.ts";
-import { assertSimple, flatten } from "./geometry.ts";
+import { bounds, flatten } from "./geometry.ts";
 
 const namespace = "http://www.w3.org/2000/svg";
 const drawable = new Set([
@@ -150,16 +150,17 @@ function localStyle(element: Element): Map<string, string> {
 export interface SvgFacts {
   checks: Check[];
   source: string;
-  cut: string;
+  cuts: string[];
 }
 
 interface Observations {
   unknown: Set<string>;
   palette: Set<string>;
-  strokes: number;
   text: number;
   cuts: string[];
-  badCuts: boolean;
+  filledCuts: boolean;
+  invalidCuts: boolean;
+  unsupportedCuts: boolean;
 }
 
 function observe(
@@ -205,53 +206,60 @@ function observePaint(
   if (tag === "text") observations.text += 1;
   const fill = style.get("fill") ?? "#000000";
   const stroke = style.get("stroke") ?? "none";
-  if (color(fill) === "#ff0000") observations.badCuts = true;
+  if (color(fill) === "#ff0000") observations.filledCuts = true;
   for (const paint of [fill, stroke]) {
     if (paint === "none") continue;
     const hex = color(paint);
     if (hex === undefined) observations.unknown.add(`paint ${paint}`);
     else observations.palette.add(hex);
   }
-  if (stroke === "none") return;
-  if (color(stroke) !== "#ff0000") {
-    observations.strokes += 1;
+  if (color(stroke) !== "#ff0000") return;
+  if (fill !== "none") {
+    observations.filledCuts = true;
+    return;
+  }
+  if (tag !== "path") {
+    observations.unsupportedCuts = true;
     return;
   }
   const path = element.getAttribute("d") ?? "";
   const parsed = svgpath(path);
-  if (
-    tag !== "path" ||
-    ("err" in parsed && parsed.err !== "") ||
-    fill !== "none" ||
-    !/[zZ]\s*$/u.test(path) ||
-    (path.match(/[mM]/gu)?.length ?? 0) !== 1 ||
-    /[aA]/u.test(path)
-  ) {
-    observations.badCuts = true;
+  if (("err" in parsed && parsed.err !== "") || !path.trim()) {
+    observations.invalidCuts = true;
     return;
   }
-  observations.cuts.push(parsed.transform(transform).abs().unshort().toString());
+  // Split compound paths for measurement; retain the original SVG for cutting.
+  const paths = parsed.transform(transform).abs().unshort().unarc().toString().split(/(?=M)/u);
+  for (const contour of paths.filter(Boolean)) {
+    if (!/[zZ]\s*$/u.test(contour)) observations.invalidCuts = true;
+    else observations.cuts.push(contour);
+  }
 }
 
 function checkCut(observation: Observations): Pick<Check, "status" | "detail"> {
-  const cut = observation.cuts[0];
-  if (observation.cuts.length !== 1 || observation.badCuts || !cut)
+  if (observation.invalidCuts)
+    return { status: "fail", detail: "Close each red cutting outline and repair invalid paths." };
+  if (observation.unsupportedCuts)
     return {
       status: "unknown",
-      detail:
-        "Export one closed, unfilled red exterior path with cubic/quadratic/line segments. Compound, open, arc, or multiple cut outlines need a simplified export.",
+      detail: "I can’t verify this type of cutting shape yet. Ask an organizer to check it.",
     };
+  if (!observation.cuts.length)
+    return { status: "fail", detail: "Add a closed, unfilled red cutting outline." };
   try {
-    assertSimple(flatten(cut, 0.01));
+    for (const cut of observation.cuts) {
+      const box = bounds(flatten(cut, 0.01));
+      if (box.maxX <= box.minX || box.maxY <= box.minY)
+        return { status: "fail", detail: "The cutting outline must enclose an area." };
+    }
     return {
       status: "pass",
-      detail:
-        "One closed, unfilled red cut path without crossings or retraced edges. Geometry is checked again at manufacturing size.",
+      detail: "Closed red cutting outlines. Multiple pieces and crossing paths are preserved.",
     };
-  } catch (cause) {
+  } catch {
     return {
-      status: "fail",
-      detail: cause instanceof Error ? cause.message : "Invalid cut geometry.",
+      status: "unknown",
+      detail: "I couldn’t measure these cutting outlines. Ask an organizer to check them.",
     };
   }
 }
@@ -261,10 +269,11 @@ export function inspectSvg(source: string, role: "badge" | "stamp"): SvgFacts {
   const observation: Observations = {
     unknown: new Set(),
     palette: new Set(),
-    strokes: 0,
     text: 0,
     cuts: [],
-    badCuts: false,
+    filledCuts: false,
+    invalidCuts: false,
+    unsupportedCuts: false,
   };
   observe(root, new Map(), "", observation);
   const disallowed = [...observation.palette].filter(
@@ -295,17 +304,17 @@ export function inspectSvg(source: string, role: "badge" | "stamp"): SvgFacts {
       detail: observation.text ? "Convert all text to vector outlines." : "No live text elements.",
     },
     fills: {
-      status: observation.strokes ? "fail" : "pass",
-      detail: observation.strokes
-        ? "Outline engraving strokes. Red cutting strokes stay strokes."
-        : "Engraving uses fills; cutting uses red strokes.",
+      status: observation.filledCuts ? "fail" : "pass",
+      detail: observation.filledCuts
+        ? "Remove red fills and red borders from filled artwork. Use unfilled red lines for cutting."
+        : "No red fills or red borders on filled artwork. Engraving may use fills or strokes.",
     },
     cut: checkCut(observation),
   };
   return {
     checks: checkIds.map((id) => ({ id, role, ...statuses[id], evidenceId: hash(source) })),
     source: new XMLSerializer().serializeToString(root),
-    cut: observation.cuts[0] ?? "",
+    cuts: observation.cuts,
   };
 }
 
