@@ -16,6 +16,8 @@ The Speedy 400 enclosure follows [Trotec’s 8070 overview](https://www.trotecla
 
 **Use simulated laser** creates a browser-local device with separate batches, receipts, and controls for timing, pause/resume, lid state, and connection failures. It stops before each stamp until the operator selects a position and confirms unused rubber. The simulator checks bed bounds and overlap with earlier stamp placements, then waits for Start. Placement survives reloads. Reset test clears its jobs and used areas. These controls never send requests to the physical laser.
 
+Simulator state and its connection use versioned localStorage keys. A schema change starts a new test device while keeping the selected SVGs. This prevents an older open tab from erasing new fields such as stamp placement. Placement is read directly from the simulator, not from shared upload receipts.
+
 ```mermaid
 flowchart LR
   A[Published sets or local SVGs] --> B[Material and render review]

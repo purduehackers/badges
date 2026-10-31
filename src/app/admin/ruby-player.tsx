@@ -12,6 +12,7 @@ import {
 } from "@/lib/ruby-production";
 import { FileThumbnail } from "./ruby-design-preview";
 import RubyStampPlacement from "./ruby-stamp-placement";
+import { readSimulation } from "@/lib/ruby-simulator";
 
 const LaserPreview = dynamic(() => import("./ruby-laser-preview"), {
   ssr: false,
@@ -103,6 +104,9 @@ export default function RubyPlayer({
     receipt = current?.receipt;
   const active = current?.running;
   const selectedJob = receipt?.jobs?.[0];
+  const simulatedJob = connection.simulated
+    ? readSimulation(connection).jobs.find((job) => job.id === selectedJob?.id)
+    : undefined;
   const progress = current?.progress;
   const remaining =
     progress !== undefined && device?.remainingTime && device.remainingTime > 0
@@ -179,7 +183,7 @@ export default function RubyPlayer({
         </aside>
         <section className="ruby-player-main" aria-label="Laser player">
           <div className="ruby-player-screen">
-            <LaserPreview file={file} origin={selectedJob?.simulatedOrigin} />
+            <LaserPreview file={file} origin={simulatedJob?.origin} />
             <div className="ruby-player-screen-top">
               <span className="ruby-live-status">
                 <i className={active ? "active" : ""} />
@@ -212,15 +216,17 @@ export default function RubyPlayer({
             )}
           </div>
           {file?.kind === "stamp" &&
-            (connection.simulated && selectedJob ? (
-              <RubyStampPlacement
-                key={selectedJob.id}
-                connection={connection}
-                file={file}
-                job={selectedJob}
-                busy={busy || stale}
-                onAligned={onSimulationChange}
-              />
+            (connection.simulated ? (
+              simulatedJob && (
+                <RubyStampPlacement
+                  key={simulatedJob.id}
+                  connection={connection}
+                  file={file}
+                  job={simulatedJob}
+                  busy={busy || stale}
+                  onAligned={onSimulationChange}
+                />
+              )
             ) : (
               <section className="ruby-stamp-placement" aria-label="Stamp alignment">
                 <h3>Align your stamp in Ruby</h3>
