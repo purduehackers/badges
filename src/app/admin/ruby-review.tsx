@@ -25,8 +25,8 @@ export default function RubyReview({
   return (
     <>
       <div className="ruby-page-heading">
-        <h1>Check your batch</h1>
-        <p>Check the designs, cutting files, and material before they go to Ruby.</p>
+        <h1>Review batch</h1>
+        <p>Check the designs and have these materials ready.</p>
       </div>
       <div className="ruby-review-grid">
         <section className="ruby-review-designs" aria-label="Design previews">
@@ -66,8 +66,7 @@ export default function RubyReview({
           })}
         </section>
         <aside className="ruby-review-summary">
-          <p className="ruby-eyebrow">Have these ready</p>
-          <h2>Your materials</h2>
+          <h2>Materials</h2>
           <ul>
             {[...materials].map(([key, items]) => (
               <li key={key}>
@@ -79,12 +78,6 @@ export default function RubyReview({
               </li>
             ))}
           </ul>
-          {files.some((file) => file.kind === "stamp") && (
-            <p className="ruby-help">
-              Each stamp needs unused rubber. Before engraving, align the laser pointer with the
-              stamp’s top-left corner.
-            </p>
-          )}
           <details className="ruby-disclosure">
             <summary>{files.length} cutting files</summary>
             <ul>
@@ -97,12 +90,11 @@ export default function RubyReview({
           </details>
           <p className="ruby-help">
             {simulated
-              ? "Confirming creates test jobs on your simulated laser."
-              : "Confirming sends these files to Ruby and queues the jobs with your saved badge and stamp settings."}
+              ? "Jobs run in this browser only."
+              : "Uses the saved badge and stamp settings in Ruby."}
           </p>
           <button className="ruby-primary" disabled={busy} onClick={onConfirm}>
-            Looks good. Queue {files.length} {files.length === 1 ? "job" : "jobs"}{" "}
-            <span aria-hidden="true">→</span>
+            Queue {files.length} {files.length === 1 ? "job" : "jobs"}
           </button>
           <button className="ruby-text-button" disabled={busy} onClick={onBack}>
             Back to files

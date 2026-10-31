@@ -12,7 +12,7 @@ import {
 } from "@/lib/ruby-production";
 import { FileThumbnail } from "./ruby-design-preview";
 import RubyStampPlacement from "./ruby-stamp-placement";
-import { readSimulation } from "@/lib/ruby-simulator";
+import { controlSimulation, readSimulation } from "@/lib/ruby-simulator";
 
 const LaserPreview = dynamic(() => import("./ruby-laser-preview"), {
   ssr: false,
@@ -49,6 +49,7 @@ export default function RubyPlayer({
   busy,
   rubyUrl,
   onCheck,
+  onEdit,
   onNew,
   onSimulationChange,
 }: {
@@ -61,10 +62,13 @@ export default function RubyPlayer({
   busy: boolean;
   rubyUrl: string;
   onCheck(): void;
+  onEdit(): void;
   onNew(): void;
   onSimulationChange(): void;
 }) {
   const [selection, setSelection] = useState<number>();
+  const [changing, setChanging] = useState(false);
+  const [controlError, setControlError] = useState("");
   const entries = files.map((file) => {
     const receipt = duplicateImport(
       receipts,
@@ -104,9 +108,11 @@ export default function RubyPlayer({
     receipt = current?.receipt;
   const active = current?.running;
   const selectedJob = receipt?.jobs?.[0];
-  const simulatedJob = connection.simulated
-    ? readSimulation(connection).jobs.find((job) => job.id === selectedJob?.id)
-    : undefined;
+  const simulation = connection.simulated ? readSimulation(connection) : undefined;
+  const simulatedJob = simulation?.jobs.find((job) => job.id === selectedJob?.id);
+  const nextJob = simulation?.jobs.find((job) => job.status !== "Finished");
+  const needsAlignment = nextJob?.status === "NeedsAlignment";
+  const placingStamp = simulatedJob?.status === "NeedsAlignment";
   const progress = current?.progress;
   const remaining =
     progress !== undefined && device?.remainingTime && device.remainingTime > 0
@@ -116,8 +122,10 @@ export default function RubyPlayer({
     progress !== undefined && progress > 0 && progress < 100 && remaining !== undefined
       ? (remaining * progress) / (100 - progress)
       : undefined;
-  const confirmed = entries.filter((entry) => entry.receipt?.queuedAt).length;
   const finished = entries.filter((entry) => jobLabel(entry.receipt) === "Finished").length;
+  const complete = files.length > 0 && finished === files.length;
+  const needsRetry = entries.some((entry) => !entry.receipt?.queuedAt || entry.receipt.queueError);
+  const canEdit = entries.every((entry) => !entry.receipt || entry.receipt.state === "rejected");
   const label = stale ? "Status unavailable" : jobLabel(receipt);
   const otherJobs = queue?.filter(
     (job) =>
@@ -126,22 +134,38 @@ export default function RubyPlayer({
           entry.receipt?.id === job.trackingNumber || entry.receipt?.jobIds?.includes(job.id),
       ),
   ).length;
+
+  async function toggleSimulation() {
+    setChanging(true);
+    setControlError("");
+    try {
+      await controlSimulation(connection, { type: simulation?.playing ? "pause" : "start" });
+      setSelection(undefined);
+      onSimulationChange();
+    } catch (cause) {
+      setControlError(cause instanceof Error ? cause.message : "Could not update the simulation.");
+    } finally {
+      setChanging(false);
+    }
+  }
   return (
     <>
       <div className="ruby-player-heading">
-        <div>
-          <h1>Production queue</h1>
-        </div>
-        <button className="ruby-text-button" onClick={onNew} disabled={busy}>
-          New batch +
+        <h1>{complete ? "Batch complete" : "Produce"}</h1>
+        <button
+          className={complete ? "ruby-primary" : "ruby-text-button"}
+          onClick={canEdit ? onEdit : onNew}
+          disabled={busy}
+        >
+          {canEdit ? "Back to files" : "New batch"}
         </button>
       </div>
       <div className="ruby-player">
         <aside className="ruby-playlist">
           <div className="ruby-section-heading">
-            <h2>Your queue</h2>
+            <h2>Jobs</h2>
             <span>
-              {confirmed}/{files.length}
+              {finished}/{files.length} done
             </span>
           </div>
           <ol>
@@ -177,69 +201,66 @@ export default function RubyPlayer({
               {otherJobs} other {otherJobs === 1 ? "job is" : "jobs are"} in Ruby’s queue.
             </p>
           )}
-          <button className="ruby-text-button" onClick={onCheck} disabled={busy}>
-            {busy ? "Preparing jobs…" : "Check queue"}
-          </button>
+          {needsRetry && !busy && (
+            <button className="ruby-text-button" onClick={onCheck}>
+              Retry queue
+            </button>
+          )}
         </aside>
         <section className="ruby-player-main" aria-label="Laser player">
-          <div className="ruby-player-screen">
-            <LaserPreview file={file} origin={simulatedJob?.origin} />
-            <div className="ruby-player-screen-top">
-              <span className="ruby-live-status">
-                <i className={active ? "active" : ""} />
-                {label}
-              </span>
-              <span>{device?.model?.replaceAll("_", " ") ?? "SPEEDY 400 FLEXX"}</span>
+          {placingStamp && simulatedJob && file ? (
+            <RubyStampPlacement
+              key={simulatedJob.id}
+              connection={connection}
+              file={file}
+              job={simulatedJob}
+              busy={busy || stale}
+              onAligned={() => {
+                setSelection(undefined);
+                onSimulationChange();
+              }}
+            />
+          ) : (
+            <div className="ruby-player-screen">
+              <LaserPreview file={file} origin={simulatedJob?.origin} />
+              <div className="ruby-player-screen-top">
+                <span className="ruby-live-status">
+                  <i className={active ? "active" : ""} />
+                  {label}
+                </span>
+                <span>Speedy 400</span>
+              </div>
+              <span className="ruby-schematic-label">Drag to rotate</span>
             </div>
-            <span className="ruby-schematic-label">40 × 24 in work area · drag to rotate</span>
-          </div>
+          )}
           <div className="ruby-now-playing">
             <div>
-              <p className="ruby-eyebrow">Selected job</p>
               <h2>{file?.file.name ?? "Choose a job"}</h2>
               <p>{file ? materialSummary(file) : ""}</p>
             </div>
-            {rubyUrl && (
-              <a
-                href={rubyUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="ruby-button ruby-primary"
-              >
-                Open in Ruby <span aria-hidden="true">↗</span>
-              </a>
-            )}
-            {selection !== undefined && activeIndex >= 0 && selection !== activeIndex && (
-              <button className="ruby-text-button" onClick={() => setSelection(undefined)}>
-                Follow current job
-              </button>
-            )}
+            {!needsAlignment &&
+              selection !== undefined &&
+              activeIndex >= 0 &&
+              selection !== activeIndex && (
+                <button className="ruby-text-button" onClick={() => setSelection(undefined)}>
+                  Follow current job
+                </button>
+              )}
           </div>
-          {file?.kind === "stamp" &&
-            (connection.simulated ? (
-              simulatedJob && (
-                <RubyStampPlacement
-                  key={simulatedJob.id}
-                  connection={connection}
-                  file={file}
-                  job={simulatedJob}
-                  busy={busy || stale}
-                  onAligned={onSimulationChange}
-                />
-              )
-            ) : (
-              <section className="ruby-stamp-placement" aria-label="Stamp alignment">
-                <h3>Align your stamp in Ruby</h3>
-                <p>
-                  Move the laser pointer to unused rubber. Align the stamp’s top-left corner with
-                  that point in Ruby before starting.
-                </p>
-                <p className="ruby-help">
-                  This page cannot read the pointer position or tell which rubber has already been
-                  used.
-                </p>
-              </section>
-            ))}
+          {file?.kind === "stamp" && !connection.simulated && label !== "Finished" && (
+            <section className="ruby-stamp-placement" aria-label="Stamp alignment">
+              <h3>Align your stamp in Ruby</h3>
+              <p>
+                Move the laser pointer to unused rubber. Align the stamp’s top-left corner with that
+                point in Ruby before starting.
+              </p>
+            </section>
+          )}
+          {controlError && (
+            <p className="ruby-error" role="alert">
+              {controlError}
+            </p>
+          )}
           {receipt?.queueError && (
             <p className="ruby-error" role="alert">
               {receipt.queueError}
@@ -259,13 +280,13 @@ export default function RubyPlayer({
             ))}
           <div className="ruby-timeline">
             <div className="ruby-timeline-heading">
-              <strong>Production timeline</strong>
+              <strong>Timeline</strong>
               <span>
                 {remaining !== undefined
                   ? `${duration(remaining)} remaining`
                   : label === "Finished"
                     ? "Complete"
-                    : "Timing appears when the job runs"}
+                    : ""}
               </span>
             </div>
             <div className="ruby-timeline-tracks">
@@ -292,16 +313,45 @@ export default function RubyPlayer({
               })}
             </div>
             <div className="ruby-timeline-time">
-              <span>{elapsed === undefined ? "—" : `~${duration(elapsed)} elapsed`}</span>
-              <span>
-                {progress !== undefined
-                  ? `${Math.round(progress)}%`
-                  : finished === files.length
-                    ? `${finished} finished`
-                    : `${confirmed - finished} queued`}
-              </span>
+              <span>{elapsed === undefined ? "" : `~${duration(elapsed)} elapsed`}</span>
+              <span>{progress !== undefined ? `${Math.round(progress)}%` : ""}</span>
             </div>
           </div>
+          {!complete && !placingStamp && (
+            <div className="ruby-playback">
+              {simulation ? (
+                <button
+                  className="ruby-primary"
+                  disabled={busy || stale || changing || !nextJob}
+                  onClick={() =>
+                    needsAlignment ? setSelection(undefined) : void toggleSimulation()
+                  }
+                >
+                  {needsAlignment
+                    ? "Position stamp"
+                    : simulation.playing
+                      ? "Pause"
+                      : nextJob?.status === "Paused"
+                        ? "Resume"
+                        : "Start batch"}
+                </button>
+              ) : (
+                <a
+                  href={rubyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ruby-button ruby-primary"
+                >
+                  Open in Ruby ↗
+                </a>
+              )}
+              <p className="ruby-help">
+                {simulation
+                  ? "Simulation · 1 minute per job"
+                  : "Start the laser in Ruby. Progress updates here."}
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </>

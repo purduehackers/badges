@@ -2,19 +2,19 @@
 
 Open `/admin` on the BIDC computer running Ruby and its TrayApp. The dark interface uses Purdue Hackers’ PolySans, PixelHackers, glider, and yellow actions.
 
-## Select → Review → Produce
+## Choose → Review → Produce
 
 1. **Connect.** Enter a Ruby Personal Access Token once. The API defaults to `https://localhost:5001`, targeting `X4-0436`. Connection settings remain editable. A successful device request establishes the connection.
-2. **Select.** Add one or more published Hack Night sets, or upload cutting SVGs. Choose each file’s role and acrylic. Published sheets supply their material and thickness through their filenames. Local files without that metadata default to ⅛-inch acrylic and require a color selection. Stamp cutting files must already be mirrored; their orientation is preserved when sent to Ruby.
+2. **Choose.** Add one or more published Hack Night sets, or upload cutting SVGs. Choose each file’s role and acrylic. Published sheets supply their material and thickness through their filenames. Local files without that metadata default to ⅛-inch acrylic and require a color selection. Stamp cutting files must already be mirrored; their orientation is preserved when sent to Ruby.
 3. **Review.** Check the acrylic badge renders, finished stamp impressions, cutting files, and required materials. The local preview reverses a mirrored stamp to show its impression. It does not change the uploaded file. Published sets show each selected acrylic; local files each receive a preview. Unsupported artwork shows a labeled flat fallback.
-4. **Confirm.** “Looks good. Queue jobs” starts the batch. The page resolves both import profiles before uploading anything, then imports each file and observes its job in Ruby’s queue.
+4. **Confirm.** “Queue jobs” starts the batch. The page resolves both import profiles before uploading anything, then imports each file and observes its job in Ruby’s queue.
 5. **Produce.** The playlist shows the batch’s jobs. Selecting a thumbnail changes the laser schematic and file details. The timeline reflects Ruby’s job states and reported progress. Other users’ queue entries are counted but never modified.
 
 The laser view is an interactive schematic, not a camera feed or a live head-position simulation. Progress and remaining time are shown only when the device’s running job matches this batch. Estimated elapsed time is labeled with `~`. Connection failures hide live progress until reads recover. Starting the physical laser still uses **Open in Ruby**, which goes to `/app/produce`; the captured public API does not expose a start command.
 
 The Speedy 400 enclosure follows [Trotec’s 8070 overview](https://www.troteclaser.com/static/pdf/speedy-400/8070-Speedy-400-flexx-Operating-manual-EN.pdf). Its working area is 1016 × 610 mm (40 × 24 inches). SVG width and height in physical units determine the material footprint; artwork without physical dimensions is not fitted to the bed. Badge sheets appear at the back-left. Stamp placement uses the stamp’s top-left corner, measured from the bed’s left and back edges. On the real machine, the operator must choose unused rubber and align the laser pointer in Ruby; the captured API cannot read or set that position.
 
-**Use simulated laser** creates a browser-local device with separate batches, receipts, and controls for timing, pause/resume, lid state, and connection failures. It stops before each stamp until the operator selects a position and confirms unused rubber. The simulator checks bed bounds and overlap with earlier stamp placements, then waits for Start. Placement survives reloads. Reset test clears its jobs and used areas. These controls never send requests to the physical laser.
+**Use simulated laser** creates a browser-local device with separate batches and receipts. Each job takes one minute of simulated time. Start, pause, and resume are beside the timeline; there are no speed or fault settings. Before each stamp, the laser preview becomes a placement map. Choose its top-left corner, confirm unused rubber, and press **Start stamp**. The simulator checks bed bounds and overlap with earlier stamp placements. Placement survives reloads. **New batch** clears simulated jobs, used areas, and selected files; real upload history is retained. Simulation never sends requests to the physical laser.
 
 Simulator state and its connection use versioned localStorage keys. A schema change starts a new test device while keeping the selected SVGs. This prevents an older open tab from erasing new fields such as stamp placement. Placement is read directly from the simulator, not from shared upload receipts.
 
@@ -36,7 +36,7 @@ flowchart LR
 
 - `ruby-connection-v1` in localStorage holds the token, API origin, device serial, and optional display name. Reloading reconnects with a read-only device request. **Sign out** removes the saved credentials and stops this page’s connection; it does not cancel jobs already accepted by Ruby. Other open tabs also disconnect when credentials change.
 - The account name comes from the token’s name/email claim when present. Otherwise the operator can give this machine a display name. The token’s account ID appears in the account tooltip. Decoded claims are display information; Ruby validates the token.
-- IndexedDB `ruby-production` / `batch` retains the selected files, material choices, and batch ID. localStorage `ruby-imports-v1` retains import receipts, tracking IDs, and queue observations. Reloading restores the batch without automatically uploading or enqueueing. **Check queue** explicitly resumes an interrupted confirmed batch.
+- IndexedDB `ruby-production` / `batch` retains the selected files, material choices, and batch ID. localStorage `ruby-imports-v1` retains import receipts, tracking IDs, and queue observations. Reloading restores the batch without automatically uploading or enqueueing. **Retry queue** appears when a confirmed batch has unfinished uploads or queue errors; status reads otherwise refresh automatically.
 - **New batch** creates a new batch ID, allowing an intentional repeat of the same files. Signing out preserves the files and receipts so a later connection can resume.
 - The public page never retrieves `RUBY_API_TOKEN` from Vercel. The browser sends credentials directly to Ruby, not to the badges backend. Credentials must never be included in a public route or `NEXT_PUBLIC_` variable.
 

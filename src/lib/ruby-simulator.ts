@@ -2,17 +2,12 @@ import { z } from "zod";
 import { RUBY_PROFILE_NAMES, type RubyConnection } from "./ruby-production";
 import { fitsBed, overlaps, svgPhysicalSize, type BedPoint } from "./ruby-bed";
 
-export const SIMULATOR_KEY = "ruby-simulator-v2";
-export const SIMULATOR_CONNECTION_KEY = "ruby-simulator-connection-v2";
+export const SIMULATOR_KEY = "ruby-simulator-v3";
+export const SIMULATOR_CONNECTION_KEY = "ruby-simulator-connection-v3";
 const simulatorSchema = z.object({
   id: z.uuid(),
   updatedAt: z.number(),
   playing: z.boolean(),
-  speed: z.union([z.literal(1), z.literal(10), z.literal(60)]),
-  jobSeconds: z.number().int().min(5).max(3600),
-  lidOpen: z.boolean(),
-  offline: z.boolean(),
-  rejectNextUpload: z.boolean(),
   jobs: z.array(
     z.object({
       id: z.uuid(),
@@ -30,11 +25,8 @@ const simulatorSchema = z.object({
 });
 export type RubySimulation = z.infer<typeof simulatorSchema>;
 export type SimulationAction =
-  | { type: "start" | "pause" | "reset" }
-  | { type: "speed"; value: RubySimulation["speed"] }
-  | { type: "jobSeconds"; value: number }
-  | { type: "align"; jobId: string; origin: BedPoint }
-  | { type: "lidOpen" | "offline" | "rejectNextUpload"; value: boolean };
+  | { type: "start" | "pause" | "newBatch" }
+  | { type: "startStamp"; jobId: string; origin: BedPoint };
 const profiles = [
   { id: "00000000-0000-4000-8000-000000000001", name: RUBY_PROFILE_NAMES.badge },
   { id: "00000000-0000-4000-8000-000000000002", name: RUBY_PROFILE_NAMES.stamp },
@@ -48,11 +40,6 @@ export function createSimulation(): RubyConnection {
         id: crypto.randomUUID(),
         updatedAt: Date.now(),
         playing: false,
-        speed: 1,
-        jobSeconds: 60,
-        lidOpen: false,
-        offline: false,
-        rejectNextUpload: false,
         jobs: [],
       };
   localStorage.setItem(SIMULATOR_KEY, JSON.stringify(state));
@@ -73,7 +60,7 @@ export function readSimulation(connection: RubyConnection) {
   return state;
 }
 
-// Advance from wall time so reloads, background tabs and faster playback agree.
+// Advance from wall time so reloads and background tabs agree.
 function advance(state: RubySimulation) {
   const now = Math.max(Date.now(), state.updatedAt);
   let cursor = state.updatedAt;
@@ -83,7 +70,7 @@ function advance(state: RubySimulation) {
     next.status = "NeedsAlignment";
     state.playing = false;
   }
-  if (!state.playing || state.lidOpen) return;
+  if (!state.playing) return;
   for (const job of state.jobs) {
     if (job.status === "Finished") continue;
     cursor = Math.max(cursor, job.availableAt);
@@ -93,10 +80,10 @@ function advance(state: RubySimulation) {
       state.playing = false;
       return;
     }
-    const seconds = ((now - cursor) / 1000) * state.speed;
+    const seconds = (now - cursor) / 1000;
     const elapsed = Math.min(seconds, job.duration - job.elapsed);
     job.elapsed += elapsed;
-    cursor += (elapsed / state.speed) * 1000;
+    cursor += elapsed * 1000;
     job.status = job.elapsed >= job.duration ? "Finished" : "Running";
     if (job.status === "Running") return;
   }
@@ -120,14 +107,12 @@ export function controlSimulation(connection: RubyConnection, action: Simulation
   return updateSimulation(connection, (state) => {
     switch (action.type) {
       case "start":
-        if (state.lidOpen) throw new Error("Close the simulated lid before starting.");
-        if (state.offline) throw new Error("Reconnect the simulated laser before starting.");
         if (state.jobs.some((job) => job.status === "NeedsAlignment"))
           throw new Error("Align the stamp before starting.");
         state.playing = state.jobs.some((job) => job.status !== "Finished");
         advance(state);
         break;
-      case "align": {
+      case "startStamp": {
         const job = state.jobs.find((item) => item.status !== "Finished");
         if (!job || job.id !== action.jobId || job.status !== "NeedsAlignment" || state.playing)
           throw new Error("Align the next stamp while the simulator is stopped.");
@@ -147,34 +132,16 @@ export function controlSimulation(connection: RubyConnection, action: Simulation
         )
           throw new Error("That area has already been used. Choose an empty spot.");
         job.origin = action.origin;
-        job.status = "Ready";
+        job.status = "Running";
+        state.playing = true;
         break;
       }
       case "pause":
         state.playing = false;
         break;
-      case "reset":
+      case "newBatch":
         state.jobs = [];
         state.playing = false;
-        state.lidOpen = false;
-        state.offline = false;
-        state.rejectNextUpload = false;
-        break;
-      case "speed":
-        state.speed = action.value;
-        break;
-      case "jobSeconds":
-        state.jobSeconds = simulatorSchema.shape.jobSeconds.parse(action.value);
-        break;
-      case "lidOpen":
-        state.lidOpen = action.value;
-        if (action.value) state.playing = false;
-        break;
-      case "offline":
-        state.offline = action.value;
-        break;
-      case "rejectNextUpload":
-        state.rejectNextUpload = action.value;
         break;
     }
     if (!state.playing)
@@ -192,7 +159,6 @@ export async function simulationRequest(
   const file = body instanceof FormData ? body.get("uploadedFiles") : undefined;
   const size = file instanceof File ? svgPhysicalSize(await file.text()) : undefined;
   return updateSimulation(connection, (state) => {
-    if (state.offline) throw new TypeError("Simulated connection lost.");
     const url = new URL(path, "https://ruby-simulator.invalid/");
     const queued = state.jobs.filter((job) => job.availableAt <= Date.now());
     const job = queued.find((item) => item.status !== "Finished");
@@ -201,19 +167,10 @@ export async function simulationRequest(
         return Response.json({
           serialNo: connection.targetDevice,
           model: "SIMULATED_SPEEDY_400",
-          status: state.lidOpen ? "LidOpen" : (job?.status ?? "Ready"),
+          status: job?.status ?? "Ready",
           jobName: job?.name,
           progress: job ? (job.elapsed / job.duration) * 100 : 0,
           remainingTime: job ? job.duration - job.elapsed : 0,
-          issues: state.lidOpen
-            ? [
-                {
-                  code: "LID_OPEN",
-                  extraInfo: "Simulated lid is open. Close it to resume.",
-                  active: true,
-                },
-              ]
-            : [],
         });
       case "/GetQueueElements":
         return Response.json(queued.filter((item) => item.status !== "Finished"));
@@ -226,10 +183,6 @@ export async function simulationRequest(
       case "/GetWorkbenches":
         return Response.json(state.jobs);
       case "/UploadFromMany": {
-        if (state.rejectNextUpload) {
-          state.rejectNextUpload = false;
-          return Response.json({ code: "SIMULATED_UPLOAD_REJECTED" }, { status: 400 });
-        }
         if (!profiles.some((profile) => profile.id === url.searchParams.get("importProfileId")))
           return Response.json({ code: "ERR_IMPORTPROFILE_002" }, { status: 400 });
         const trackingNumber = url.searchParams.get("trackingNumber");
@@ -241,7 +194,7 @@ export async function simulationRequest(
             name: file.name.replace(/\.svg$/i, ""),
             trackingNumber,
             availableAt: Date.now() + 750,
-            duration: state.jobSeconds,
+            duration: 60,
             elapsed: 0,
             kind: url.searchParams.get("importProfileId") === profiles[1].id ? "stamp" : "badge",
             size,
