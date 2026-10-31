@@ -31,12 +31,12 @@
 .ruby-brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.6em;
   font-size: 13px;
 }
 .ruby-brand img {
-  width: 24px;
-  height: auto;
+  width: auto;
+  height: 1em;
   flex-shrink: 0;
 }
 .ruby-admin h1 {
