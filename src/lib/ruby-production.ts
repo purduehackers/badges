@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { readRubyJson, redact, rubyOrigin } from "./ruby-diagnostics";
+import { physicalSize } from "./ruby-bed";
 
 export const connectionSchema = z.object({
   baseUrl: z.string(),
@@ -24,6 +25,7 @@ const rubyJob = z.object({
   name: z.string().nullish(),
   status: z.string().nullish(),
   trackingNumber: z.string().nullish(),
+  simulatedOrigin: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 export type RubyJob = z.infer<typeof rubyJob>;
 const rubyDevice = z.object({
@@ -221,12 +223,6 @@ export function rubyClient(input: RubyConnection) {
   };
 }
 
-function formatDimension(value: string) {
-  const unit = value.trim().slice(-2).toLowerCase();
-  const inches = Number.parseFloat(value) / (unit === "mm" ? 25.4 : unit === "cm" ? 2.54 : 1);
-  return Number(inches.toFixed(2)).toString();
-}
-
 export async function prepareSvg(file: File) {
   if (!/\.svg$/i.test(file.name)) throw new Error(`${file.name}: choose an SVG cutting file.`);
   const bytes = await file.arrayBuffer();
@@ -249,19 +245,15 @@ export async function prepareSvg(file: File) {
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
-  const width = svg.getAttribute("width"),
-    height = svg.getAttribute("height");
-  const dimension = (value: string | null): value is string =>
-    Boolean(value && /^\d*\.?\d+(mm|cm|in)$/i.test(value.trim()));
+  const size = physicalSize(svg.getAttribute("width"), svg.getAttribute("height"));
   return {
     file,
     digest,
     svg: text,
     kind: (/(?:^|-)stamp\.svg$/i.test(file.name) ? "stamp" : "badge") as RubyFileKind,
-    dimensions:
-      dimension(width) && dimension(height)
-        ? `${formatDimension(width)} × ${formatDimension(height)} in`
-        : "Size not specified. Check in Ruby.",
+    dimensions: size
+      ? `${Number((size.width / 25.4).toFixed(2))} × ${Number((size.height / 25.4).toFixed(2))} in`
+      : "Size not specified. Check in Ruby.",
   };
 }
 

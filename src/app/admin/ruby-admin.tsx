@@ -518,6 +518,7 @@ export default function RubyAdmin() {
               busy={Boolean(busy)}
               rubyUrl={rubyUrl}
               onCheck={() => void run("Checking jobs…", produce)}
+              onSimulationChange={() => setRefresh((value) => value + 1)}
               onNew={() =>
                 void run("Starting a new batch…", async () => {
                   await updateFiles([]);
