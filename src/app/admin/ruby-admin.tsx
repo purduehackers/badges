@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
@@ -330,9 +331,7 @@ export default function RubyAdmin() {
     <main className="ruby-admin">
       <header className="ruby-nav">
         <Link href="/admin" className="ruby-brand" aria-label="Purdue Hackers badge production">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M8 0h8v8H8ZM16 8h8v8h-8ZM0 16h8v8H0ZM8 16h8v8H8ZM16 16h8v8h-8Z" />
-          </svg>
+          <Image src="/ph.svg" alt="" width={172} height={166} loading="eager" />
           <span>
             Purdue Hackers <span className="ruby-muted">/ Badges</span>
           </span>

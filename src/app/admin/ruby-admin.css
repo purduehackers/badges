@@ -34,10 +34,9 @@
   gap: 12px;
   font-size: 13px;
 }
-.ruby-brand svg {
+.ruby-brand img {
   width: 24px;
-  height: 24px;
-  color: var(--accent);
+  height: auto;
   flex-shrink: 0;
 }
 .ruby-admin h1 {
