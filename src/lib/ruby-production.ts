@@ -6,6 +6,7 @@ export const connectionSchema = z.object({
   token: z.string(),
   targetDevice: z.string(),
   displayName: z.string().optional(),
+  simulated: z.boolean().optional(),
 });
 export type RubyConnection = z.infer<typeof connectionSchema>;
 export const CONNECTION_KEY = "ruby-connection-v1";
@@ -100,15 +101,25 @@ export function rubyAccount(token: string) {
 }
 
 export function rubyClient(input: RubyConnection) {
-  const baseUrl = rubyOrigin(input.baseUrl);
+  const baseUrl = input.simulated ? "https://ruby-simulator.invalid" : rubyOrigin(input.baseUrl);
   const token = input.token.trim().replace(/^PersonalAccessToken\s+/i, "");
   const targetDevice = input.targetDevice.trim();
   if (!token || /\s/.test(token)) throw new Error("Enter a Ruby Personal Access Token.");
   if (!/^[\x21-\x7e]+$/.test(targetDevice))
     throw new Error("Enter the laser’s serial number without spaces.");
-  const connection = { baseUrl, token, targetDevice, displayName: input.displayName?.trim() };
+  const connection = {
+    baseUrl,
+    token,
+    targetDevice,
+    displayName: input.displayName?.trim(),
+    simulated: input.simulated,
+  };
 
   function request(path: string, body?: FormData | string) {
+    if (connection.simulated)
+      return import("./ruby-simulator").then(({ simulationRequest }) =>
+        simulationRequest(connection, path, body),
+      );
     return fetch(`${baseUrl}/api/OpenApi/${path}`, {
       method: body ? "POST" : "GET",
       body,
@@ -131,6 +142,8 @@ export function rubyClient(input: RubyConnection) {
   async function failure(response: Response) {
     const data = await readRubyJson(response).catch(() => undefined);
     const code = z.object({ code: z.string() }).safeParse(data);
+    if (code.success && code.data.code === "SIMULATED_UPLOAD_REJECTED")
+      return "The simulator rejected this upload. Check the queue to retry.";
     if (code.success && code.data.code === "ERR_IMPORTPROFILE_002")
       return "Ruby rejected the import profile. Check that it still exists in Ruby, then try again.";
     return response.status === 401 || response.status === 403
@@ -144,7 +157,9 @@ export function rubyClient(input: RubyConnection) {
       response = await request(path);
     } catch {
       throw new Error(
-        "Could not reach Ruby. Check its certificate, local-network access, and API address.",
+        connection.simulated
+          ? "The simulated laser is disconnected. Turn off “Connection lost” to reconnect."
+          : "Could not reach Ruby. Check its certificate, local-network access, and API address.",
       );
     }
     if (!response.ok) throw new Error(await failure(response));

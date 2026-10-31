@@ -256,6 +256,60 @@
 .ruby-settings {
   margin-top: 18px;
 }
+.ruby-simulator-entry {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.ruby-simulator-entry > button {
+  width: 100%;
+}
+.ruby-simulator-entry > p {
+  margin-top: 10px;
+}
+.ruby-simulation-notice {
+  padding-top: 18px;
+  color: var(--accent);
+  font-size: 12px;
+}
+.ruby-simulator {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ruby-simulator-toolbar {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.ruby-simulator label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+.ruby-simulator select {
+  width: auto;
+}
+.ruby-simulator-settings {
+  margin-top: 16px;
+}
+.ruby-simulator-settings > label {
+  margin-top: 16px;
+}
+.ruby-simulator-settings > p {
+  margin: 8px 0 16px;
+}
+.ruby-simulator-faults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+.ruby-simulator input[type="checkbox"] {
+  width: 16px;
+  min-height: 16px;
+  accent-color: var(--accent);
+}
 .ruby-selection {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);

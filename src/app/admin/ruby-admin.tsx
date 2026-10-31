@@ -30,6 +30,8 @@ import RubyDiagnostics from "./ruby-diagnostics-panel";
 import RubySelection from "./ruby-selection";
 import RubyReview from "./ruby-review";
 import RubyPlayer from "./ruby-player";
+import RubySimulatorControls from "./ruby-simulator-controls";
+import { createSimulation, readSimulation, SIMULATOR_CONNECTION_KEY } from "@/lib/ruby-simulator";
 import "./ruby-admin.css";
 
 type Client = ReturnType<typeof rubyClient>;
@@ -52,6 +54,7 @@ export default function RubyAdmin() {
   const [device, setDevice] = useState<RubyDevice>();
   const [queue, setQueue] = useState<RubyJob[]>();
   const [statusError, setStatusError] = useState("");
+  const [refresh, setRefresh] = useState(0);
   const [files, setFiles] = useState<ProductionFile[]>([]);
   const [receipts, setReceipts] = useState<RubyReceipt[]>([]);
   const history = useRef<RubyReceipt[]>([]);
@@ -79,9 +82,14 @@ export default function RubyAdmin() {
     const controller = new AbortController();
     void (async () => {
       try {
+        const raw =
+          localStorage.getItem(SIMULATOR_CONNECTION_KEY) ?? localStorage.getItem(CONNECTION_KEY);
+        const value = raw ? connectionSchema.parse(JSON.parse(raw)) : defaults;
         const stored = readReceipts().map(
           (receipt): RubyReceipt =>
-            receipt.state === "sending"
+            receipt.state === "sending" &&
+            receipt.baseUrl === value.baseUrl &&
+            receipt.targetDevice === value.targetDevice
               ? {
                   ...receipt,
                   state: "unknown",
@@ -92,17 +100,16 @@ export default function RubyAdmin() {
         localStorage.setItem(RECEIPTS_KEY, JSON.stringify(stored));
         history.current = stored;
         setReceipts(stored);
-        const saved = await savedBatch();
+        const saved = await savedBatch(undefined, value.simulated ? "simulated" : "current");
         if (cancelled) return;
         setFiles(saved);
         batchId.current = saved.length ? saved[0].batchId : crypto.randomUUID();
         setReady(true);
-        const raw = localStorage.getItem(CONNECTION_KEY);
         if (!raw) return;
-        const value = connectionSchema.parse(JSON.parse(raw));
         setConnection(value);
         const restored = rubyClient(value);
-        const laser = await restored.device();
+        const laser =
+          value.simulated && readSimulation(value).offline ? undefined : await restored.device();
         if (cancelled) return;
         activeClient.current = restored;
         setClient(restored);
@@ -129,7 +136,7 @@ export default function RubyAdmin() {
           setCatalogError("Published designs are unavailable. You can still upload files.");
       });
     const changed = (event: StorageEvent) => {
-      if (event.key === CONNECTION_KEY) {
+      if (event.key === CONNECTION_KEY || event.key === SIMULATOR_CONNECTION_KEY) {
         activeClient.current = undefined;
         setClient(undefined);
         setDevice(undefined);
@@ -154,7 +161,7 @@ export default function RubyAdmin() {
   }, []);
 
   useEffect(() => {
-    if (!client || phase !== "produce") return;
+    if (!client || (phase !== "produce" && !client.connection.simulated)) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function poll() {
@@ -207,7 +214,7 @@ export default function RubyAdmin() {
           setDevice(undefined);
         }
       } finally {
-        if (!cancelled) timer = setTimeout(poll, 5000);
+        if (!cancelled) timer = setTimeout(poll, client!.connection.simulated ? 1000 : 5000);
       }
     }
     void poll();
@@ -215,7 +222,7 @@ export default function RubyAdmin() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [client, phase, files, saveReceipt]);
+  }, [client, phase, files, saveReceipt, refresh]);
 
   async function run(label: string, action: () => Promise<void>) {
     if (lock.current) return;
@@ -232,7 +239,7 @@ export default function RubyAdmin() {
     }
   }
   async function updateFiles(next: ProductionFile[]) {
-    await savedBatch(next);
+    await savedBatch(next, client?.connection.simulated ? "simulated" : "current");
     setFiles(next);
   }
   async function addFiles(incoming: ProductionFile[]) {
@@ -242,16 +249,24 @@ export default function RubyAdmin() {
         next.push({ ...file, batchId: batchId.current });
     await updateFiles(next);
   }
-  async function connect() {
-    const current = rubyClient(connection);
-    const laser = await current.device();
-    localStorage.setItem(CONNECTION_KEY, JSON.stringify(current.connection));
+  async function connect(value = connection) {
+    const current = rubyClient(value);
+    const laser =
+      value.simulated && readSimulation(value).offline ? undefined : await current.device();
+    const saved = await savedBatch(undefined, value.simulated ? "simulated" : "current");
+    setFiles(saved);
+    batchId.current = saved.length ? saved[0].batchId : crypto.randomUUID();
+    localStorage.setItem(
+      value.simulated ? SIMULATOR_CONNECTION_KEY : CONNECTION_KEY,
+      JSON.stringify(current.connection),
+    );
+    if (!value.simulated) localStorage.removeItem(SIMULATOR_CONNECTION_KEY);
     activeClient.current = current;
     setClient(current);
     setDevice(laser);
     setStatusError("");
-    if (
-      files.some((file) =>
+    setPhase(
+      saved.some((file) =>
         duplicateImport(
           history.current,
           current.connection,
@@ -260,17 +275,23 @@ export default function RubyAdmin() {
           file.batchId,
         ),
       )
-    )
-      setPhase("produce");
+        ? "produce"
+        : "select",
+    );
   }
-  function disconnect() {
-    localStorage.removeItem(CONNECTION_KEY);
+  async function disconnect() {
+    localStorage.removeItem(
+      client?.connection.simulated ? SIMULATOR_CONNECTION_KEY : CONNECTION_KEY,
+    );
     activeClient.current = undefined;
     setClient(undefined);
     setDevice(undefined);
     setQueue(undefined);
-    setConnection(defaults);
+    const real = localStorage.getItem(CONNECTION_KEY);
+    setConnection(real ? connectionSchema.parse(JSON.parse(real)) : defaults);
     setError("");
+    setStatusError("");
+    setPhase("select");
   }
   async function produce() {
     if (!client || !ready || !files.length) return;
@@ -294,9 +315,10 @@ export default function RubyAdmin() {
   const accountName = account.name ?? client?.connection.displayName ?? connection.displayName;
   const displayName =
     accountName || (account.id ? `Ruby account ${account.id.slice(0, 8)}` : "Ruby account");
-  const rubyUrl = client
-    ? `${new URL(client.connection.baseUrl).protocol}//${new URL(client.connection.baseUrl).hostname}:2402/app/produce`
-    : "";
+  const rubyUrl =
+    client && !client.connection.simulated
+      ? `${new URL(client.connection.baseUrl).protocol}//${new URL(client.connection.baseUrl).hostname}:2402/app/produce`
+      : "";
   const visibleReceipts = receipts.filter(
     (receipt) =>
       client &&
@@ -322,10 +344,25 @@ export default function RubyAdmin() {
             </span>
             <span title={account.id ? `Ruby account ${account.id}` : undefined}>
               <strong>{displayName}</strong>
-              <small>{client.connection.targetDevice}</small>
+              <small>
+                {client.connection.simulated ? "Browser simulator" : client.connection.targetDevice}
+              </small>
             </span>
-            <button className="ruby-text-button" onClick={disconnect} disabled={Boolean(busy)}>
-              Sign out
+            {!client.connection.simulated && (
+              <button
+                className="ruby-text-button"
+                disabled={Boolean(busy)}
+                onClick={() => void run("Opening simulator…", () => connect(createSimulation()))}
+              >
+                Use simulator
+              </button>
+            )}
+            <button
+              className="ruby-text-button"
+              onClick={() => void run("Disconnecting…", disconnect)}
+              disabled={Boolean(busy)}
+            >
+              {client.connection.simulated ? "Leave simulator" : "Sign out"}
             </button>
           </div>
         )}
@@ -390,9 +427,25 @@ export default function RubyAdmin() {
             </button>
             <p className="ruby-help">Saved in this browser. Signing out removes the token.</p>
           </form>
+          <div className="ruby-simulator-entry">
+            <button
+              disabled={!ready || Boolean(busy)}
+              onClick={() => void run("Opening simulator…", () => connect(createSimulation()))}
+            >
+              Use simulated laser
+            </button>
+            <p className="ruby-help">
+              Test the full workflow in this browser, including the queue and timing.
+            </p>
+          </div>
         </section>
       ) : (
         <>
+          {client.connection.simulated && (
+            <p className="ruby-simulation-notice">
+              Simulation · Files and jobs stay in this browser.
+            </p>
+          )}
           <nav className="ruby-steps" aria-label="Production steps">
             {(["select", "review", "produce"] as const).map((step, index) => (
               <span key={step} aria-current={phase === step ? "step" : undefined}>
@@ -401,6 +454,29 @@ export default function RubyAdmin() {
               </span>
             ))}
           </nav>
+          {client.connection.simulated && (
+            <RubySimulatorControls
+              key={client.connection.targetDevice}
+              connection={client.connection}
+              busy={Boolean(busy)}
+              onChange={() => setRefresh((value) => value + 1)}
+              onReset={async () => {
+                const remaining = readReceipts().filter(
+                  (receipt) =>
+                    receipt.baseUrl !== client.connection.baseUrl ||
+                    receipt.targetDevice !== client.connection.targetDevice,
+                );
+                localStorage.setItem(RECEIPTS_KEY, JSON.stringify(remaining));
+                history.current = remaining;
+                setReceipts(remaining);
+                setQueue([]);
+                setDevice(undefined);
+                setStatusError("");
+                setError("");
+                setPhase(files.length ? "review" : "select");
+              }}
+            />
+          )}
           {phase === "select" && (
             <RubySelection
               releases={releases}
@@ -425,6 +501,7 @@ export default function RubyAdmin() {
           {phase === "review" && (
             <RubyReview
               files={files}
+              simulated={client.connection.simulated}
               busy={Boolean(busy)}
               onBack={() => setPhase("select")}
               onConfirm={() => void run("Preparing jobs…", produce)}
@@ -472,12 +549,14 @@ export default function RubyAdmin() {
         <span>Made for Hack Night.</span>
         {client && (
           <div className="ruby-support">
-            <RubyDiagnostics
-              connection={client.connection}
-              receipts={visibleReceipts}
-              disabled={Boolean(busy)}
-              rubyUrl={rubyUrl}
-            />
+            {!client.connection.simulated && (
+              <RubyDiagnostics
+                connection={client.connection}
+                receipts={visibleReceipts}
+                disabled={Boolean(busy)}
+                rubyUrl={rubyUrl}
+              />
+            )}
             {visibleReceipts.length > 0 && (
               <button
                 className="ruby-text-button"
