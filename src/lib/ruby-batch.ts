@@ -69,7 +69,10 @@ export async function loadRelease(release: Release) {
 }
 
 // IndexedDB preserves uploaded SVGs across reloads without filling localStorage.
-export async function savedBatch(files?: ProductionFile[]): Promise<ProductionFile[]> {
+export async function savedBatch(
+  files?: ProductionFile[],
+  key = "current",
+): Promise<ProductionFile[]> {
   const database = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open("ruby-production", 1);
     request.onupgradeneeded = () => request.result.createObjectStore("batch");
@@ -80,7 +83,7 @@ export async function savedBatch(files?: ProductionFile[]): Promise<ProductionFi
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction("batch", files ? "readwrite" : "readonly");
       const store = transaction.objectStore("batch");
-      const request = files ? store.put(files, "current") : store.get("current");
+      const request = files ? store.put(files, key) : store.get(key);
       transaction.oncomplete = () =>
         resolve((request.result && !files ? request.result : files) ?? []);
       transaction.onerror = () => reject(new Error("Could not save this batch on this computer."));

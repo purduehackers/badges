@@ -9,11 +9,13 @@ const DesignPreview = dynamic(() => import("./ruby-design-preview"), {
 
 export default function RubyReview({
   files,
+  simulated,
   busy,
   onBack,
   onConfirm,
 }: {
   files: ProductionFile[];
+  simulated?: boolean;
   busy: boolean;
   onBack(): void;
   onConfirm(): void;
@@ -88,8 +90,9 @@ export default function RubyReview({
             </ul>
           </details>
           <p className="ruby-help">
-            Confirming sends these files to Ruby and queues the jobs with your saved badge and stamp
-            settings.
+            {simulated
+              ? "Confirming creates test jobs on your simulated laser."
+              : "Confirming sends these files to Ruby and queues the jobs with your saved badge and stamp settings."}
           </p>
           <button className="ruby-primary" disabled={busy} onClick={onConfirm}>
             Looks good. Queue {files.length} {files.length === 1 ? "job" : "jobs"}{" "}

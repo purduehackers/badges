@@ -29,6 +29,7 @@ function jobLabel(receipt?: RubyReceipt) {
   const states = receipt.jobs?.map((job) => job.status) ?? [];
   if (states.includes("Erroneous")) return "Needs attention";
   if (states.includes("Running")) return "Running";
+  if (states.includes("Paused")) return "Paused";
   if (states.length && states.every((state) => state === "Finished")) return "Finished";
   if (states.includes("Removed")) return "Removed from queue";
   if (receipt.queuedAt) return receipt.jobs?.length === 0 ? "Not in queue" : "Queued";
@@ -58,8 +59,7 @@ export default function RubyPlayer({
   onCheck(): void;
   onNew(): void;
 }) {
-  const [selection, setSelection] = useState(0);
-  const selected = Math.min(selection, files.length - 1);
+  const [selection, setSelection] = useState<number>();
   const entries = files.map((file) => {
     const receipt = duplicateImport(
       receipts,
@@ -69,8 +69,8 @@ export default function RubyPlayer({
       file.batchId,
       true,
     );
-    const job = receipt?.jobs?.find((item) => item.status === "Running");
-    const running =
+    const job = receipt?.jobs?.find((item) => ["Running", "Paused"].includes(item.status ?? ""));
+    const tracked =
       !stale &&
       job &&
       device?.jobName &&
@@ -80,25 +80,31 @@ export default function RubyPlayer({
     return {
       file,
       receipt,
-      running,
+      tracked,
+      running: tracked && job?.status === "Running",
       progress:
-        running && typeof device?.progress === "number"
+        tracked && typeof device?.progress === "number"
           ? Math.max(0, Math.min(100, device.progress))
           : undefined,
     };
   });
+  const activeIndex = entries.findIndex((entry) => entry.tracked);
+  const selected = Math.min(selection ?? Math.max(0, activeIndex), files.length - 1);
   const current = entries[selected];
   const file = current?.file,
     receipt = current?.receipt;
   const active = current?.running;
   const progress = current?.progress;
   const remaining =
-    active && device?.remainingTime && device.remainingTime > 0 ? device.remainingTime : undefined;
+    current?.tracked && device?.remainingTime && device.remainingTime > 0
+      ? device.remainingTime
+      : undefined;
   const elapsed =
     progress !== undefined && progress > 0 && progress < 100 && remaining !== undefined
       ? (remaining * progress) / (100 - progress)
       : undefined;
   const confirmed = entries.filter((entry) => entry.receipt?.queuedAt).length;
+  const finished = entries.filter((entry) => jobLabel(entry.receipt) === "Finished").length;
   const label = stale ? "Status unavailable" : jobLabel(receipt);
   const otherJobs = queue?.filter(
     (job) =>
@@ -180,9 +186,21 @@ export default function RubyPlayer({
               <h2>{file?.file.name ?? "Choose a job"}</h2>
               <p>{file ? materialSummary(file) : ""}</p>
             </div>
-            <a href={rubyUrl} target="_blank" rel="noreferrer" className="ruby-button ruby-primary">
-              Open in Ruby <span aria-hidden="true">↗</span>
-            </a>
+            {rubyUrl && (
+              <a
+                href={rubyUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="ruby-button ruby-primary"
+              >
+                Open in Ruby <span aria-hidden="true">↗</span>
+              </a>
+            )}
+            {selection !== undefined && activeIndex >= 0 && selection !== activeIndex && (
+              <button className="ruby-text-button" onClick={() => setSelection(undefined)}>
+                Follow current job
+              </button>
+            )}
           </div>
           {receipt?.queueError && (
             <p className="ruby-error" role="alert">
@@ -207,7 +225,9 @@ export default function RubyPlayer({
               <span>
                 {remaining !== undefined
                   ? `${duration(remaining)} remaining`
-                  : "Timing appears when the job runs"}
+                  : label === "Finished"
+                    ? "Complete"
+                    : "Timing appears when the job runs"}
               </span>
             </div>
             <div className="ruby-timeline-tracks">
@@ -236,7 +256,11 @@ export default function RubyPlayer({
             <div className="ruby-timeline-time">
               <span>{elapsed === undefined ? "—" : `~${duration(elapsed)} elapsed`}</span>
               <span>
-                {progress === undefined ? `${confirmed} queued` : `${Math.round(progress)}%`}
+                {progress !== undefined
+                  ? `${Math.round(progress)}%`
+                  : finished === files.length
+                    ? `${finished} finished`
+                    : `${confirmed - finished} queued`}
               </span>
             </div>
           </div>
