@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { RUBY_BED, fitsBed, svgPhysicalSize } from "@/lib/ruby-bed";
 import type { ProductionFile } from "@/lib/ruby-batch";
-import type { RubyConnection, RubyJob } from "@/lib/ruby-production";
-import { controlSimulation, readSimulation } from "@/lib/ruby-simulator";
+import type { RubyConnection } from "@/lib/ruby-production";
+import { controlSimulation, readSimulation, type RubySimulation } from "@/lib/ruby-simulator";
 import { svgImage } from "./ruby-design-preview";
 
 export default function RubyStampPlacement({
@@ -16,7 +16,7 @@ export default function RubyStampPlacement({
 }: {
   connection: RubyConnection;
   file: ProductionFile;
-  job: RubyJob;
+  job: RubySimulation["jobs"][number];
   busy: boolean;
   onAligned(): void;
 }) {
@@ -29,13 +29,13 @@ export default function RubyStampPlacement({
   );
   const size = svgPhysicalSize(file.svg);
   const point =
-    job.simulatedOrigin ??
+    job.origin ??
     (coordinates.every((value) => value.trim())
       ? { x: Number(coordinates[0]) * 25.4, y: Number(coordinates[1]) * 25.4 }
       : undefined);
   const valid = point && size && fitsBed(point, size);
   const disabled = busy || saving || job.status !== "NeedsAlignment";
-  const aligned = Boolean(job.simulatedOrigin);
+  const aligned = Boolean(job.origin);
   return (
     <section className="ruby-stamp-placement" aria-label="Stamp alignment">
       <h3>{aligned ? "Stamp aligned" : "Align your stamp"}</h3>
@@ -144,7 +144,6 @@ export default function RubyStampPlacement({
                   type: "align",
                   jobId: job.id,
                   origin: point,
-                  size,
                 })
                   .then(onAligned)
                   .catch((cause: unknown) =>

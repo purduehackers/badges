@@ -25,7 +25,6 @@ const rubyJob = z.object({
   name: z.string().nullish(),
   status: z.string().nullish(),
   trackingNumber: z.string().nullish(),
-  simulatedOrigin: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 export type RubyJob = z.infer<typeof rubyJob>;
 const rubyDevice = z.object({
