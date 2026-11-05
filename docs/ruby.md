@@ -56,6 +56,8 @@ Uncertain uploads, queue errors, missing profiles, and errored jobs stop the rem
 
 Reads time out after 15 seconds; uploads after 60 seconds. Queue observation waits are bounded and can be resumed. API origins are restricted to localhost, private IPv4, or the BIDC hostnames; network addresses require HTTPS. Requests omit cookies and reject redirects. Diagnostic reports redact tokens and credential fields.
 
+Device status ignores issues whose severity is `Informational` before validating their remaining fields. The `active` field accepts booleans and numeric `0`/`1`. Active issues with other severities still appear in the player; invalid actionable issue data still fails validation.
+
 ## Verification
 
 The October 22 BIDC reports established direct browser access and PersonalAccessToken authentication. With `x-target-device: X4-0436`, the API identifies a Speedy 400 Flexx, its active job/progress, and queue entries.

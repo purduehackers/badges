@@ -27,6 +27,7 @@ const rubyJob = z.object({
   trackingNumber: z.string().nullish(),
 });
 export type RubyJob = z.infer<typeof rubyJob>;
+const informationalIssue = z.object({ severity: z.literal("Informational") });
 const rubyDevice = z.object({
   serialNo: z.string(),
   model: z.string().nullish(),
@@ -34,9 +35,25 @@ const rubyDevice = z.object({
   jobName: z.string().nullish(),
   progress: z.number().optional(),
   remainingTime: z.number().optional(),
-  issues: z
-    .array(z.object({ code: z.string(), extraInfo: z.string().nullish(), active: z.boolean() }))
-    .nullish(),
+  issues: z.preprocess(
+    // Informational entries do not affect readiness, even when Ruby sends different issue fields.
+    (issues) =>
+      Array.isArray(issues)
+        ? issues.filter((issue) => !informationalIssue.safeParse(issue).success)
+        : issues,
+    z
+      .array(
+        z.object({
+          code: z.string(),
+          extraInfo: z.string().nullish(),
+          active: z
+            .union([z.boolean(), z.literal(0), z.literal(1)])
+            .transform((active) => active === true || active === 1),
+          severity: z.string().nullish(),
+        }),
+      )
+      .nullish(),
+  ),
   error: z.object({ code: z.string(), additionalInfo: z.string().nullish() }).nullish(),
 });
 export type RubyDevice = z.infer<typeof rubyDevice>;
