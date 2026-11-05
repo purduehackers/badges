@@ -49,7 +49,7 @@ export async function previewPacking(
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const result = await pack(
     source,
-    inspectSvg(source, "badge").cut,
+    inspectSvg(source, "badge").cuts,
     { ...review.settings, badgeSizeIn: sizeIn },
     store,
     sizes,

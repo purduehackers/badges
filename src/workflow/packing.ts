@@ -16,6 +16,7 @@ import {
   fromPath,
   MARGIN,
   offset,
+  packingBoundary,
   rotate,
   SCALE,
   toPath,
@@ -37,13 +38,19 @@ interface Shape {
   heightIn: number;
 }
 
-function shapeAt(cut: string, sizeIn: number): Shape {
-  const { box, scale, widthIn, heightIn } = physicalDimensions(cut, "badge", sizeIn);
+function shapeAt(cuts: string[], sizeIn: number): Shape {
+  const { box, scale, widthIn, heightIn } = physicalDimensions(cuts, "badge", sizeIn);
   const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
-  const points = flatten(cut, 0.01 / scale).map((p) => ({
-    x: (p.x - center.x) * scale,
-    y: (p.y - center.y) * scale,
-  }));
+  const boundary = (tolerance: number) =>
+    packingBoundary(
+      cuts.map((cut) =>
+        flatten(cut, tolerance / scale).map((p) => ({
+          x: (p.x - center.x) * scale,
+          y: (p.y - center.y) * scale,
+        })),
+      ),
+    );
+  const points = boundary(0.01);
   if (points.length > 384)
     throw new Error(
       "Cut outline exceeds the 384-vertex packing budget. Simplify the exterior path.",
@@ -56,10 +63,7 @@ function shapeAt(cut: string, sizeIn: number): Shape {
     Math.abs(Clipper.Clipper.Area(simple[0])) < SCALE * SCALE
   )
     throw new Error("Cut outline is disconnected, self-intersecting, or too small.");
-  const searchPoints = flatten(cut, 0.1 / scale).map((p) => ({
-    x: (p.x - center.x) * scale,
-    y: (p.y - center.y) * scale,
-  }));
+  const searchPoints = boundary(0.1);
   if (searchPoints.length > 128)
     throw new Error(
       "Cut outline exceeds the 128-vertex search budget. Simplify the exterior path.",
@@ -222,7 +226,7 @@ function sheetSvg(
 
 export async function pack(
   source: string,
-  cut: string,
+  cuts: string[],
   settings: Settings,
   store: Pick<BadgeStore, "putAsset">,
   sheets: CuttingSheet[],
@@ -231,7 +235,7 @@ export async function pack(
   const { attempt = 0, target, cached = [] } = options;
   const deadline = Date.now() + 45_000;
   const search = async (sizeIn: number) => {
-    const shape = shapeAt(cut, sizeIn);
+    const shape = shapeAt(cuts, sizeIn);
     const placements = nest(shape.searchPoints, sheets, settings.gapMm, deadline, attempt);
     if (!placements.length) throw new Error("The cut outline does not fit on the selected sheets.");
     return renderLayout(
@@ -270,7 +274,7 @@ export async function pack(
       ? candidate
       : await renderLayout(
           source,
-          shapeAt(cut, candidate.sizeIn),
+          shapeAt(cuts, candidate.sizeIn),
           selectPlacements(candidate, target),
           { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets: candidate.sheetSizes },
           store,

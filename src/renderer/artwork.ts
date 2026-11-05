@@ -69,15 +69,15 @@ export async function readArtwork(svg: string) {
       (path) =>
         !path.closest("defs, clipPath") && getComputedStyle(path).stroke === "rgb(255, 0, 0)",
     );
-    if (cuts.length !== 1) throw new Error("Expected one cut outline.");
-    const cut = cuts[0]!;
-    cut.id = "badge-preview-cut";
+    if (!cuts.length) throw new Error("Missing cut outline.");
+    for (const [index, cut] of cuts.entries()) cut.id = `badge-preview-cut-${index}`;
+    const ids = new Set(cuts.map((cut) => cut.id));
     const loaded = new SVGLoader().parse(new XMLSerializer().serializeToString(root)).paths;
-    const outline = loaded.find((path) => path.userData?.node.id === cut.id);
-    if (!outline) throw new Error("Cannot read cut outline.");
-    const shapes = SVGLoader.createShapes(outline);
-    if (shapes.length !== 1) throw new Error("Expected one exterior outline.");
-    cut.remove();
+    const shapes = loaded
+      .filter((path) => ids.has(path.userData?.node.id))
+      .flatMap((path) => SVGLoader.createShapes(path));
+    if (!shapes.length) throw new Error("Cannot read cut outlines.");
+    for (const cut of cuts) cut.remove();
     const imageRoot = root.cloneNode(true) as SVGSVGElement;
     if (originalStyle) imageRoot.setAttribute("style", originalStyle);
     else imageRoot.removeAttribute("style");

@@ -14,7 +14,7 @@ The bot asks for missing details, then handles automated quality assurance (QA) 
 Your part has three stages:
 
 - **Design**: Upload the badge and stamp SVGs and choose acrylic. Identify the file roles and Hack Night only when the submission leaves them unclear.
-- **Automatic QA**: The service checks vector artwork, supported features, colors, outlined text, filled engraving, and the cutting outline. A failed check shows the design, result, and repair guidance together.
+- **Automatic QA**: The service checks vector artwork, supported features, colors, outlined text, and closed cutting outlines. Red fills and red borders on filled artwork fail the check; engraving may use fills or strokes. Unsupported features appear as unverified, rather than as design errors.
 - **Human QA**: Check the badge’s version, date, readability, contrast, and thin connections. Check the stamp’s finished impression, then choose **Confirm designs** when both look right.
 
 A revision retains the event and acrylic. Only the affected design loses its confirmation. The stamp always measures 1.5 inches on its shortest side. You supply an unmirrored stamp; the service mirrors its cutting export.
@@ -30,6 +30,8 @@ Production has three stages:
 - **Publish and share**: Choose **Publish cutting files**. The service saves the sources, exports, previews, metadata, and sheet layouts, then creates `phack.rs/badge-<version>` and deducts used acrylic once.
 
 A sizing question calculates a proposal without changing the batch. For example, “How many fit at 3 inches?” returns dimensions and counts per sheet. Choosing that proposal applies it. A feasible layout is not proof of the maximum possible count.
+
+Multiple badge pieces stay together as one design. Dimensions include every cutting outline. Packing uses a conservative boundary around multiple pieces or crossing paths, while exports preserve the original paths. This can leave more space than packing each piece separately. The designer checks the intended cuts during human QA.
 
 Changing the production target can resize badges within the configured range. The layout card shows the resulting dimensions before publication. This preserves the designer’s confirmation; changes to the artwork, event, acrylic, or configured design size require confirmation again.
 

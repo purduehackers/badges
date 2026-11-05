@@ -56,7 +56,7 @@ function cubic(
 export function flatten(path: string, tolerance: number): Point[] {
   const points: Point[] = [];
   let current: Point = { x: 0, y: 0 };
-  const parsed = svgpath(path).abs().unshort();
+  const parsed = svgpath(path).abs().unshort().unarc();
   if ("err" in parsed && parsed.err !== "") throw new Error("Invalid SVG cut path syntax.");
   parsed.iterate((segment) => {
     if (points.length > 2000) throw new Error("Cut outline exceeds the geometry budget.");
@@ -116,7 +116,7 @@ export function flatten(path: string, tolerance: number): Point[] {
   return points;
 }
 
-/** Reject crossings and retraced edges rather than silently repairing a cutting path. */
+/** The packing polygon must be simple; the original cutting artwork is never changed. */
 export function assertSimple(points: Point[]): void {
   for (const [i, a] of points.entries()) {
     const b = points[(i + 1) % points.length];
@@ -159,6 +159,36 @@ export function offset(points: Point[], amount: number): Point[] {
   if (paths.length !== 1 || !paths[0])
     throw new Error("Cut outline changes topology when clearance is added.");
   return fromPath(paths[0]);
+}
+
+/** Enclose multiple pieces or crossings for packing, preserving their relative positions. */
+export function packingBoundary(contours: Point[][]): Point[] {
+  const first = contours[0];
+  if (contours.length === 1 && first) {
+    try {
+      assertSimple(first);
+      return first;
+    } catch {
+      // A conservative hull lets the packer handle paths that are not simple polygons.
+    }
+  }
+  const points = contours.flat().sort((a, b) => a.x - b.x || a.y - b.y);
+  const half = (ordered: Point[]) => {
+    const result: Point[] = [];
+    for (const point of ordered) {
+      while (result.length >= 2) {
+        const a = result[result.length - 2]!,
+          b = result[result.length - 1]!;
+        if ((b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x) > 0) break;
+        result.pop();
+      }
+      result.push(point);
+    }
+    return result.slice(0, -1);
+  };
+  const hull = [...half(points), ...half([...points].reverse())];
+  if (hull.length < 3) throw new Error("The cutting outlines do not enclose an area.");
+  return hull;
 }
 
 export function rotate(points: Point[], angle: number): Point[] {

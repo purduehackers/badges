@@ -39,7 +39,8 @@ function noise(x: number, y: number, seed: number) {
 /** An appearance model of ink transfer, not a calibrated rubber/contact solver. */
 export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
   const artwork = await readArtwork(svg);
-  const points = artwork.shapes[0]!.getPoints(512);
+  const contours = artwork.shapes.map((shape) => shape.extractPoints(512));
+  const points = contours.flatMap((contour) => contour.shape);
   const minX = Math.min(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const cutWidth = Math.max(...points.map((point) => point.x)) - minX;
@@ -54,13 +55,17 @@ export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
   const height = Math.ceil((heightMm + 12) * pixelsPerMm);
   const shape = canvas2d(width, height);
   shape.context.setTransform(scale, 0, 0, scale, margin - minX * scale, margin - minY * scale);
-  shape.context.beginPath();
-  for (const [index, point] of points.entries()) {
-    if (index === 0) shape.context.moveTo(point.x, point.y);
-    else shape.context.lineTo(point.x, point.y);
+  for (const contour of contours) {
+    shape.context.beginPath();
+    for (const ring of [contour.shape, ...contour.holes]) {
+      for (const [index, point] of ring.entries()) {
+        if (index === 0) shape.context.moveTo(point.x, point.y);
+        else shape.context.lineTo(point.x, point.y);
+      }
+      shape.context.closePath();
+    }
+    shape.context.fill("evenodd");
   }
-  shape.context.closePath();
-  shape.context.fill();
   const silhouette = shape.context.getImageData(0, 0, width, height).data;
   const removal = canvas2d(width, height);
   removal.context.setTransform(scale, 0, 0, scale, margin - minX * scale, margin - minY * scale);

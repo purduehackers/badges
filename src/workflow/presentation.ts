@@ -20,7 +20,11 @@ export function designerText(text: string, fallback = unclearReply): string {
   return clean ? clean.slice(0, 1800) : fallback;
 }
 
-export function findingGuidance(finding: Pick<Check, "id" | "role">): string {
+export function findingGuidance(finding: Check): string {
+  if (finding.status === "unknown")
+    return finding.id === "cut"
+      ? finding.detail
+      : "I can’t verify some features in this SVG yet. Ask an organizer to check it.";
   switch (finding.id) {
     case "supported":
       return "Flatten effects into vector shapes, then export a new SVG.";
@@ -33,9 +37,9 @@ export function findingGuidance(finding: Pick<Check, "id" | "role">): string {
     case "text":
       return "Convert your lettering to outlines, then export a new SVG.";
     case "fills":
-      return "Outline the strokes in your artwork. Keep the red cutting outline as a stroke.";
+      return "Remove red fills and red borders from filled artwork. Use unfilled red lines for cutting.";
     case "cut":
-      return "Join the outside cutting line into 1 closed red outline. Remove its fill, crossings and extra outlines.";
+      return finding.detail;
   }
 }
 
@@ -49,8 +53,8 @@ export function verificationChecks(review: Review, role: Criterion) {
         : "Black-and-white artwork with red only for cutting",
     vectors: "Vector artwork with no embedded images",
     text: "No editable text",
-    fills: "Engraving uses filled shapes",
-    cut: "One closed, unfilled red cutting outline without crossings",
+    fills: "No red fills or red borders on filled artwork",
+    cut: "Closed red cutting outlines",
   };
   return checkIds.map((id) => {
     const check = review[role]
@@ -186,14 +190,13 @@ export function reviewPrompt(review: Review): string {
       return "Checking your files…";
     case "fix": {
       const role = fixRole(review);
-      const fixes = [
-        ...new Set(
-          review.checks
-            .filter((check) => check.role === role && check.status !== "pass")
-            .map(findingGuidance),
-        ),
-      ];
-      return `${fixes.join("\n\n")}\n\nUpload your updated ${role} when it’s ready.`;
+      const findings = review.checks.filter(
+        (check) => check.role === role && check.status !== "pass",
+      );
+      const fixes = [...new Set(findings.map(findingGuidance))];
+      return findings.some((check) => check.status === "fail")
+        ? `${fixes.join("\n\n")}\n\nUpload your updated ${role} when it’s ready.`
+        : fixes.join("\n\n");
     }
     case "event":
       return "Which Hack Night are these designs for?";
