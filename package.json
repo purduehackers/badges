@@ -38,8 +38,8 @@
     }
   },
   "scripts": {
-    "dev": "bun run --bun next dev",
-    "build": "bun run build:service && bun run --bun next build",
+    "dev": "bun run --bun next dev --webpack",
+    "build": "bun run build:service && bun run --bun next build --webpack",
     "start": "bun run --bun next start",
     "lint": "oxlint --type-aware --deny-warnings",
     "format": "oxfmt",
@@ -52,6 +52,7 @@
   "dependencies": {
     "@libsql/client": "0.17.4",
     "@octokit/auth-app": "8.2.0",
+    "@purduehackers/phack-cli": "0.2.0",
     "@resvg/resvg-js": "2.6.2",
     "@sparticuz/chromium": "153.0.0",
     "@xmldom/xmldom": "0.9.12",

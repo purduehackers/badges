@@ -1,10 +1,13 @@
 "use client";
 
+import { Button } from "@/components/ph/button";
+import { Input } from "@/components/ph/input";
+
 import Image from "next/image";
 import { useState } from "react";
 import { ACRYLIC_MATERIALS, materialLabel } from "@/lib/materials";
 import { type ProductionFile, type Release } from "@/lib/ruby-batch";
-import { FileThumbnail } from "./ruby-design-preview";
+import { FileThumbnail } from "@/components/design-preview";
 
 export default function RubySelection({
   releases,
@@ -33,12 +36,18 @@ export default function RubySelection({
     <>
       <div className="ruby-page-heading">
         <h1>Choose designs</h1>
-        <p>Add a published set or upload your cutting SVGs.</p>
+        <p>Add a published set or upload ready-to-cut SVGs.</p>
       </div>
+      <p className="ruby-create-link">
+        Starting with individual badge and stamp designs?{" "}
+        <Button href="/" variant="outline" size="sm">
+          Create cutting files
+        </Button>
+      </p>
       <div className="ruby-selection">
         <aside className="ruby-library">
           <label htmlFor="ruby-search">Published designs</label>
-          <input
+          <Input
             id="ruby-search"
             type="search"
             placeholder="Find a Hack Night…"
@@ -55,7 +64,7 @@ export default function RubySelection({
                 const added = files.some((file) => file.version === release.version);
                 return (
                   <li key={release.version}>
-                    <button
+                    <Button
                       className="ruby-release"
                       disabled={busy || added}
                       onClick={() => onRelease(release)}
@@ -78,7 +87,7 @@ export default function RubySelection({
                         <small>{release.files.length} cutting files</small>
                       </span>
                       <span className="ruby-release-add">{added ? "Added" : "+"}</span>
-                    </button>
+                    </Button>
                   </li>
                 );
               })}
@@ -93,9 +102,10 @@ export default function RubySelection({
             <h2>
               Cutting files <span>{files.length || ""}</span>
             </h2>
-            <label className="ruby-upload-button">
+            <label htmlFor="cutting-uploads" className="ruby-upload-button">
               Upload SVGs
-              <input
+              <Input
+                id="cutting-uploads"
                 aria-label="Upload cutting SVGs"
                 type="file"
                 multiple
@@ -164,14 +174,14 @@ export default function RubySelection({
                     )}
                   </div>
                 </div>
-                <button
+                <Button
                   className="ruby-icon-button"
                   aria-label={`Remove ${file.file.name}`}
                   disabled={busy}
                   onClick={() => onFiles(files.filter((_, i) => i !== index))}
                 >
                   ×
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -182,13 +192,13 @@ export default function RubySelection({
                   ? "Choose acrylic for each badge sheet."
                   : "Stamp cutting files must already be mirrored."}
               </p>
-              <button
+              <Button
                 className="ruby-primary"
                 disabled={busy || !files.length || missingMaterial}
                 onClick={onReview}
               >
                 Review batch
-              </button>
+              </Button>
             </div>
           )}
         </section>

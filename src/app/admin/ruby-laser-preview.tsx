@@ -7,7 +7,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { stockMaterial } from "@/lib/materials";
 import type { ProductionFile } from "@/lib/ruby-batch";
 import { RUBY_BED, svgPhysicalSize, type BedPoint } from "@/lib/ruby-bed";
-import { svgImage } from "./ruby-design-preview";
+import { svgImage } from "@/components/design-preview";
 
 type Vector = [number, number, number];
 

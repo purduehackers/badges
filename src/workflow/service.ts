@@ -9,6 +9,7 @@ import {
   BADGES_CHANNEL_ID,
   contextHash,
   designHash,
+  includesMaterial,
   invalidate,
   ready,
   remainingCriteria,
@@ -221,14 +222,21 @@ class BadgeService {
           review.sheetBatch ?? (await this.inventory.defaultBatch(reviewMaterials(review)));
         return {
           next: { ...review, sheetBatch, decisions: [...review.decisions, ...confirmed] },
-          jobs: [],
+          jobs: review.targetCount === undefined ? [] : ["pack"],
         };
       }
       case "sheets": {
         if (!action.sheets || !reviewMaterials(review).length)
           throw new Error("Choose the sheets to use for this batch.");
-        const sheetBatch = resolveSheets(action.sheets, reviewMaterials(review));
-        await this.inventory.plan(reviewMaterials(review), expandSheets(sheetBatch));
+        const materials = [...reviewMaterials(review)];
+        for (const sheet of action.sheets)
+          if (sheet.material && !includesMaterial(materials, sheet.material))
+            materials.push(sheet.material);
+        const batch = resolveSheets(action.sheets, materials);
+        const plan = await this.inventory.plan(materials, expandSheets(batch));
+        const selection = await this.inventory.selectSheets(
+          plan.map(({ itemId, quantity }) => ({ itemId, quantity })),
+        );
         const {
           layouts: _layouts,
           selectedLayout: _selected,
@@ -242,7 +250,10 @@ class BadgeService {
         return {
           next: {
             ...rest,
-            sheetBatch,
+            sheetBatch: selection.sheetBatch,
+            ...(materials.length > reviewMaterials(review).length
+              ? { materials: selection.materials }
+              : {}),
             layouts: [],
             layoutAttempt: 0,
             manufacturer: actor.person,
@@ -270,7 +281,7 @@ class BadgeService {
             ...rest,
             manufacturer: actor.person,
             generation: review.generation + 1,
-            targetCount: plan.layout.count,
+            targetCount: plan.targetCount ?? plan.layout.count,
             fittedSizeIn: plan.layout.sizeIn,
             sheetBatch: plan.sheets,
             layouts: [plan.layout],
@@ -287,6 +298,10 @@ class BadgeService {
       }
       case "quantity": {
         const {
+          approval: _approval,
+          publication,
+          pr: _pr,
+          repositoryHead: _head,
           selectedLayout: _layout,
           stockPlan: _stock,
           failure: _failure,
@@ -296,6 +311,12 @@ class BadgeService {
         } = review;
         const next = {
           ...rest,
+          ...(publication?.shortlink
+            ? {
+                previousShortlink: publication.shortlink,
+                stockReceipt: review.stockReceipt ?? `${review.id}:${review.generation}`,
+              }
+            : {}),
           generation: review.generation + 1,
           manufacturer: actor.person,
           ...(action.count === undefined ? {} : { targetCount: action.count }),
@@ -397,10 +418,12 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
     !review.contextChanged &&
     reviewable(review) &&
     remainingCriteria(review).length === 0;
+  const revisingQuantity = action.kind === "quantity" && step === "done";
   if (
     ["quantity", "layout", "publish", "sheets"].includes(action.kind) &&
     !["quantity", "layout"].includes(step) &&
-    !recoveringSheets
+    !recoveringSheets &&
+    !revisingQuantity
   )
     throw new Error("Confirm the designs before planning production.");
   switch (action.kind) {
@@ -431,7 +454,10 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
       break;
     case "layout":
     case "quantity":
+      break;
     case "sheets":
+      if (review.stockReceipt)
+        throw new Error("Quantity revisions use the sheets already allocated to this batch.");
       break;
     case "upload":
       break;

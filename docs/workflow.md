@@ -14,7 +14,7 @@ The bot asks for missing details, then handles automated quality assurance (QA) 
 Your part has three stages:
 
 - **Design**: Upload the badge and stamp SVGs and choose acrylic. Identify the file roles and Hack Night only when the submission leaves them unclear.
-- **Automatic QA**: The service checks vector artwork, supported features, colors, outlined text, filled engraving, and the cutting outline. A failed check shows the design, result, and repair guidance together.
+- **Automatic QA**: The service checks vector artwork, supported features, colors, outlined text, and closed cutting outlines. Red fills fail the check. Red cutting strokes may share a path with grayscale engraving fills. Unsupported features appear as unverified, rather than as design errors.
 - **Human QA**: Check the badge’s version, date, readability, contrast, and thin connections. Check the stamp’s finished impression, then choose **Confirm designs** when both look right.
 
 A revision retains the event and acrylic. Only the affected design loses its confirmation. The stamp always measures 1.5 inches on its shortest side. You supply an unmirrored stamp; the service mirrors its cutting export.
@@ -29,7 +29,11 @@ Production has three stages:
 - **Choose sheets and pack**: Start with one sheet per selected acrylic color from inventory, or up to two sheets for a single color. Choose **Change sheets**, or say “Use one blue 12 × 12 and one orange 12 × 18,” to change the mix. The service uses those dimensions for packing, reserves a 0.2-inch edge margin, and audits the final outlines for overlap. Counts are shared across colors within each color’s available capacity. Only sheets containing badges are exported and deducted; cutting-file names identify the size, color, and thickness.
 - **Publish and share**: Choose **Publish cutting files**. The service saves the sources, exports, previews, metadata, and sheet layouts, then creates `phack.rs/badge-<version>` and deducts used acrylic once.
 
+The target is a minimum. Automatic packing searches in 0.05-inch size steps up to 2.5 inches for the largest size it finds that meets that target, then fills the remaining space with extra badges. The final layout is audited against detailed outlines. Search is bounded; it does not prove a global optimum. An explicit sizing question keeps that size fixed, and configured long-shape exceptions retain their own size.
+
 A sizing question calculates a proposal without changing the batch. For example, “How many fit at 3 inches?” returns dimensions and counts per sheet. Choosing that proposal applies it. A feasible layout is not proof of the maximum possible count.
+
+Multiple badge pieces stay together as one design. Dimensions include every cutting outline. Packing uses a conservative boundary around multiple pieces or crossing paths, while exports preserve the original paths. This can leave more space than packing each piece separately. The designer checks the intended cuts during human QA.
 
 Changing the production target can resize badges within the configured range. The layout card shows the resulting dimensions before publication. This preserves the designer’s confirmation; changes to the artwork, event, acrylic, or configured design size require confirmation again.
 

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
+import { Button } from "@/components/ph/button";
+import { Input } from "@/components/ph/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
@@ -52,6 +52,7 @@ const defaults: RubyConnection = {
 
 export default function RubyAdmin() {
   const [connection, setConnection] = useState(defaults);
+  const handoff = useRef(false);
   const [client, setClient] = useState<Client>();
   const activeClient = useRef<Client | undefined>(undefined);
   const [device, setDevice] = useState<RubyDevice>();
@@ -103,7 +104,13 @@ export default function RubyAdmin() {
         localStorage.setItem(RECEIPTS_KEY, JSON.stringify(stored));
         history.current = stored;
         setReceipts(stored);
-        const saved = await savedBatch(undefined, value.simulated ? "simulated" : "current");
+        handoff.current = new URLSearchParams(window.location.search).get("batch") === "prepared";
+        const incoming = handoff.current ? await savedBatch(undefined, "handoff") : [];
+        const saved = incoming.length
+          ? incoming
+          : await savedBatch(undefined, value.simulated ? "simulated" : "current");
+        if (incoming.length && raw)
+          await savedBatch(incoming, value.simulated ? "simulated" : "current");
         if (cancelled) return;
         setFiles(saved);
         batchId.current = saved.length ? saved[0].batchId : crypto.randomUUID();
@@ -254,7 +261,13 @@ export default function RubyAdmin() {
   async function connect(value = connection) {
     const current = rubyClient(value);
     const laser = await current.device();
-    const saved = await savedBatch(undefined, value.simulated ? "simulated" : "current");
+    const incoming = handoff.current ? await savedBatch(undefined, "handoff") : [];
+    const saved = incoming.length
+      ? incoming
+      : await savedBatch(undefined, value.simulated ? "simulated" : "current");
+    if (incoming.length) await savedBatch(incoming, value.simulated ? "simulated" : "current");
+    handoff.current = false;
+    window.history.replaceState({}, "", "/admin");
     setFiles(saved);
     batchId.current = saved.length ? saved[0].batchId : crypto.randomUUID();
     localStorage.setItem(
@@ -330,12 +343,7 @@ export default function RubyAdmin() {
   return (
     <main className="ruby-admin">
       <header className="ruby-nav">
-        <Link href="/admin" className="ruby-brand" aria-label="Purdue Hackers badge production">
-          <Image src="/ph.svg" alt="" width={172} height={166} loading="eager" />
-          <span>
-            Purdue Hackers <span className="ruby-muted">/ Badges</span>
-          </span>
-        </Link>
+        <span className="ph-subheadline">Badge production</span>
         {client && (
           <div className="ruby-account">
             <span title={account.id ? `Ruby account ${account.id}` : undefined}>
@@ -347,28 +355,32 @@ export default function RubyAdmin() {
               </small>
             </span>
             {!client.connection.simulated && (
-              <button
+              <Button
                 className="ruby-text-button"
                 disabled={Boolean(busy)}
                 onClick={() => void run("Opening simulator…", () => connect(createSimulation()))}
               >
                 Use simulator
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               className="ruby-text-button"
               onClick={() => void run("Disconnecting…", disconnect)}
               disabled={Boolean(busy)}
             >
               {client.connection.simulated ? "Leave simulator" : "Sign out"}
-            </button>
+            </Button>
           </div>
         )}
       </header>
       {!client ? (
         <section className="ruby-login">
-          <h1>Badge production</h1>
-          <p>Connect to Ruby on the BIDC computer.</p>
+          <h1>Ready for the laser.</h1>
+          <p>
+            {files.length
+              ? `${files.length} cutting files are ready. Connect to Ruby or try the simulated laser.`
+              : "Connect to Ruby on the BIDC computer, or try the simulated laser."}
+          </p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -378,7 +390,7 @@ export default function RubyAdmin() {
             {!account.name && (
               <>
                 <label htmlFor="ruby-name">Display name</label>
-                <input
+                <Input
                   id="ruby-name"
                   autoComplete="name"
                   placeholder="Your name"
@@ -390,7 +402,7 @@ export default function RubyAdmin() {
               </>
             )}
             <label htmlFor="ruby-token">Ruby token</label>
-            <input
+            <Input
               id="ruby-token"
               type="password"
               autoComplete="off"
@@ -402,7 +414,7 @@ export default function RubyAdmin() {
             <details className="ruby-settings">
               <summary>Connection settings</summary>
               <label htmlFor="ruby-address">Ruby API address</label>
-              <input
+              <Input
                 id="ruby-address"
                 type="url"
                 required
@@ -410,7 +422,7 @@ export default function RubyAdmin() {
                 onChange={(event) => setConnection({ ...connection, baseUrl: event.target.value })}
               />
               <label htmlFor="ruby-device">Laser serial number</label>
-              <input
+              <Input
                 id="ruby-device"
                 required
                 value={connection.targetDevice}
@@ -419,19 +431,19 @@ export default function RubyAdmin() {
                 }
               />
             </details>
-            <button className="ruby-primary" type="submit" disabled={!ready || Boolean(busy)}>
+            <Button className="ruby-primary" type="submit" disabled={!ready || Boolean(busy)}>
               {busy || "Connect to Ruby"}
               <span aria-hidden="true">→</span>
-            </button>
+            </Button>
             <p className="ruby-help">Saved in this browser. Signing out removes the token.</p>
           </form>
           <div className="ruby-simulator-entry">
-            <button
+            <Button
               disabled={!ready || Boolean(busy)}
               onClick={() => void run("Opening simulator…", () => connect(createSimulation()))}
             >
               Use simulated laser
-            </button>
+            </Button>
             <p className="ruby-help">Try the workflow without a laser.</p>
           </div>
         </section>
@@ -518,7 +530,6 @@ export default function RubyAdmin() {
         </p>
       )}
       <footer className="ruby-admin-footer">
-        <span>Made for Hack Night.</span>
         {client && (
           <div className="ruby-support">
             {!client.connection.simulated && (

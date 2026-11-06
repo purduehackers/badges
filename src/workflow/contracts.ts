@@ -149,6 +149,7 @@ export const reviewSchema = z.strictObject({
   layouts: z.array(layoutSchema).max(3),
   selectedLayout: digestSchema.optional(),
   stockPlan: stockPlanSchema.optional(),
+  stockReceipt: z.string().optional(),
   layoutAttempt: z.int().nonnegative().default(0),
   targetCount: targetCountSchema.optional(),
   fittedSizeIn: z.number().min(1.8).max(10).optional(),
@@ -238,6 +239,7 @@ export function contextHash(review: Review): string {
       sheetBatch: review.sheetBatch,
       layout: review.selectedLayout,
       stockPlan: review.stockPlan,
+      ...(review.stockReceipt ? { stockReceipt: review.stockReceipt } : {}),
       manufacturing: review.manufacturing,
       rubric: review.rubric,
     }),
@@ -309,7 +311,8 @@ export function ready(review: Review): boolean {
         layout.id === review.selectedLayout &&
         layout.audited &&
         layout.sizeIn === badgeSize(review) &&
-        layout.count === review.targetCount,
+        review.targetCount !== undefined &&
+        layout.count >= review.targetCount,
     )
   );
 }
