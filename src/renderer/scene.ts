@@ -106,6 +106,7 @@ export async function createBadgeScene(input: RenderInput, options: SurfaceOptio
     material.dispose();
     surface.dispose();
     renderer.dispose();
+    renderer.forceContextLoss();
   }
   return { renderer, scene, camera, half, badge, dispose };
 }

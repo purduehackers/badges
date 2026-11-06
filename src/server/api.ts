@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { reviewMaterials } from "../workflow/contracts.ts";
 import { actionName, actionRequest, componentId } from "../workflow/wire.ts";
 import { actionable, reviewStep } from "../workflow/presentation.ts";
 import { inventoryRequestSchema } from "../workflow/inventory-contracts.ts";
@@ -31,7 +30,7 @@ async function control(input: z.output<typeof actionRequest>, mutate: boolean) {
       !mutate && input.action.kind === "material"
         ? await inventory.acrylic()
         : !mutate && input.action.kind === "sheets"
-          ? await inventory.sheets(reviewMaterials(stored.review))
+          ? await inventory.acrylic(stored.review.sheetBatch)
           : undefined;
     return Response.json({ ...stored, availableSheets });
   } catch (cause) {

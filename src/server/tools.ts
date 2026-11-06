@@ -67,12 +67,12 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
   if (["files", "missing", "upload", "fix", "qa", "quantity", "layout", "done"].includes(step))
     candidates.push(["request_replacement", { kind: "upload", role: "badge" }]);
   if (review.pendingRole) candidates.push(["keep_design", { kind: "keep-design" }]);
-  if (["quantity", "layout"].includes(step))
+  if (["quantity", "layout", "done"].includes(step))
     candidates.push(
       ["set_target_quantity", { kind: "quantity", count: 80 }],
       ["select_packing", { kind: "layout", id: "candidate" }],
     );
-  if (["quantity", "layout", "error"].includes(step))
+  if (!review.stockReceipt && ["quantity", "layout", "error"].includes(step))
     candidates.push(["set_sheets", { kind: "sheets" }]);
   if (step === "layout") candidates.push(["publish_batch", { kind: "publish" }]);
   if (step === "error")
@@ -100,7 +100,7 @@ export async function reviewStatus(context: Context) {
   const stock = tools.includes("select_material")
     ? await runtime().inventory.acrylic()
     : tools.includes("set_sheets")
-      ? await runtime().inventory.sheets(reviewMaterials(review))
+      ? await runtime().inventory.acrylic(review.sheetBatch)
       : undefined;
   return {
     tools,

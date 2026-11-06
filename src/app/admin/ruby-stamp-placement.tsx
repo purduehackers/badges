@@ -1,11 +1,14 @@
 "use client";
 
+import { Button } from "@/components/ph/button";
+import { Input } from "@/components/ph/input";
+
 import { useState } from "react";
 import { RUBY_BED, fitsBed, svgPhysicalSize } from "@/lib/ruby-bed";
 import type { ProductionFile } from "@/lib/ruby-batch";
 import type { RubyConnection } from "@/lib/ruby-production";
 import { controlSimulation, readSimulation, type RubySimulation } from "@/lib/ruby-simulator";
-import { svgImage } from "./ruby-design-preview";
+import { svgImage } from "@/components/design-preview";
 
 export default function RubyStampPlacement({
   connection,
@@ -44,7 +47,7 @@ export default function RubyStampPlacement({
       ) : (
         <div className="ruby-stamp-layout">
           <div>
-            <button
+            <Button
               className="ruby-bed-map"
               aria-label="Choose the stamp’s top-left point on the 40 by 24 inch bed"
               disabled={disabled}
@@ -120,7 +123,7 @@ export default function RubyStampPlacement({
                   </g>
                 )}
               </svg>
-            </button>
+            </Button>
             <p className="ruby-help">40 × 24 in bed · {file.dimensions} stamp</p>
           </div>
           <form
@@ -147,7 +150,7 @@ export default function RubyStampPlacement({
               {["From left (in)", "From back (in)"].map((label, index) => (
                 <label key={label}>
                   {label}
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     step="0.01"
@@ -165,8 +168,9 @@ export default function RubyStampPlacement({
               ))}
             </div>
             {point && !valid && <p className="ruby-error">Keep the entire stamp inside the bed.</p>}
-            <label className="ruby-stamp-confirm">
-              <input
+            <label htmlFor="stamp-space-confirm" className="ruby-stamp-confirm">
+              <Input
+                id="stamp-space-confirm"
                 type="checkbox"
                 checked={confirmed}
                 disabled={disabled}
@@ -174,9 +178,13 @@ export default function RubyStampPlacement({
               />
               This spot has enough unused rubber for the stamp.
             </label>
-            <button className="ruby-primary" disabled={disabled || !valid || !confirmed}>
+            <Button
+              type="submit"
+              className="ruby-primary"
+              disabled={disabled || !valid || !confirmed}
+            >
               {saving ? "Starting…" : "Start stamp"}
-            </button>
+            </Button>
           </form>
         </div>
       )}

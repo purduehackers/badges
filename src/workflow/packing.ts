@@ -12,10 +12,12 @@ import {
   assertSimple,
   clip,
   Clipper,
+  convexHull,
   flatten,
   fromPath,
   MARGIN,
   offset,
+  packingBoundary,
   rotate,
   SCALE,
   toPath,
@@ -23,7 +25,7 @@ import {
 } from "./geometry.ts";
 import type { Point } from "./geometry.ts";
 import { physicalDimensions } from "./manufacturing.ts";
-import { BADGE_SIZE_STEP_IN, MIN_BADGE_SIZE_IN } from "./policy.ts";
+import { BADGE_SIZE_STEP_IN, MIN_BADGE_SIZE_IN, MAX_BADGE_SIZE_IN } from "./policy.ts";
 import type { BadgeStore } from "./store.ts";
 import { parseSvg } from "./svg.ts";
 
@@ -37,16 +39,22 @@ interface Shape {
   heightIn: number;
 }
 
-function shapeAt(cut: string, sizeIn: number): Shape {
-  const { box, scale, widthIn, heightIn } = physicalDimensions(cut, "badge", sizeIn);
+function shapeAt(cuts: string[], sizeIn: number): Shape {
+  const { box, scale, widthIn, heightIn } = physicalDimensions(cuts, "badge", sizeIn);
   const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
-  const points = flatten(cut, 0.01 / scale).map((p) => ({
-    x: (p.x - center.x) * scale,
-    y: (p.y - center.y) * scale,
-  }));
-  if (points.length > 384)
+  const boundary = (tolerance: number) =>
+    packingBoundary(
+      cuts.map((cut) =>
+        flatten(cut, tolerance / scale).map((p) => ({
+          x: (p.x - center.x) * scale,
+          y: (p.y - center.y) * scale,
+        })),
+      ),
+    );
+  const points = boundary(0.01);
+  if (points.length > 2000)
     throw new Error(
-      "Cut outline exceeds the 384-vertex packing budget. Simplify the exterior path.",
+      "Cut outline exceeds the 2000-vertex packing budget. Simplify the exterior path.",
     );
   assertSimple(points);
   const simple = Clipper.Clipper.SimplifyPolygon(toPath(points), Clipper.PolyFillType.pftNonZero);
@@ -56,14 +64,17 @@ function shapeAt(cut: string, sizeIn: number): Shape {
     Math.abs(Clipper.Clipper.Area(simple[0])) < SCALE * SCALE
   )
     throw new Error("Cut outline is disconnected, self-intersecting, or too small.");
-  const searchPoints = flatten(cut, 0.1 / scale).map((p) => ({
-    x: (p.x - center.x) * scale,
-    y: (p.y - center.y) * scale,
-  }));
-  if (searchPoints.length > 128)
-    throw new Error(
-      "Cut outline exceeds the 128-vertex search budget. Simplify the exterior path.",
-    );
+  let searchPoints = boundary(0.1);
+  if (searchPoints.length > 128) searchPoints = convexHull(points);
+  if (searchPoints.length > 128) {
+    const { minX, minY, maxX, maxY } = bounds(points);
+    searchPoints = [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: maxX, y: maxY },
+      { x: minX, y: maxY },
+    ];
+  }
   return { points, searchPoints, center, scale, widthIn, heightIn };
 }
 
@@ -222,78 +233,105 @@ function sheetSvg(
 
 export async function pack(
   source: string,
-  cut: string,
+  cuts: string[],
   settings: Settings,
   store: Pick<BadgeStore, "putAsset">,
   sheets: CuttingSheet[],
-  options: { attempt?: number; target?: number; cached?: Layout[]; fixedSize?: boolean } = {},
+  options: {
+    attempt?: number;
+    target?: number;
+    cached?: Layout[];
+    fixedSize?: boolean;
+    minSizeIn?: number;
+    maxSizeIn?: number;
+  } = {},
 ): Promise<{ layouts: Layout[]; shortfall?: { count: number; sizeIn: number } }> {
   const { attempt = 0, target, cached = [] } = options;
   const deadline = Date.now() + 45_000;
-  const search = async (sizeIn: number) => {
-    const shape = shapeAt(cut, sizeIn);
-    const placements = nest(shape.searchPoints, sheets, settings.gapMm, deadline, attempt);
-    if (!placements.length) throw new Error("The cut outline does not fit on the selected sheets.");
-    return renderLayout(
-      source,
-      shape,
-      placements,
-      { sizeIn, gapMm: settings.gapMm, sheets },
-      store,
-    );
-  };
-  const capacity =
-    cached
+  const search = (sizeIn: number) => {
+    const shape = shapeAt(cuts, sizeIn);
+    const previous = cached
       .filter(
         (layout) =>
-          layout.sizeIn === settings.badgeSizeIn &&
-          JSON.stringify(layout.sheetSizes) === JSON.stringify(sheets),
+          layout.sizeIn === sizeIn && JSON.stringify(layout.sheetSizes) === JSON.stringify(sheets),
       )
-      .sort((a, b) => b.count - a.count)[0] ?? (await search(settings.badgeSizeIn));
-  let candidate = capacity;
-  // Long designs have an organizer-owned size exception. Do not shrink them to a normal badge.
-  const minimum =
-    options.fixedSize || settings.badgeSizeIn > 2.2 ? settings.badgeSizeIn : MIN_BADGE_SIZE_IN;
-  for (
-    let sizeIn = Number((settings.badgeSizeIn - BADGE_SIZE_STEP_IN).toFixed(2));
-    target !== undefined && candidate.count < target && sizeIn >= minimum;
-    sizeIn = Number((sizeIn - BADGE_SIZE_STEP_IN).toFixed(2))
-  ) {
-    const found = await search(sizeIn);
-    if (found.count > candidate.count) candidate = found;
-  }
-  if (target === undefined) return { layouts: [capacity] };
-  if (candidate.count < target)
-    return { layouts: [capacity], shortfall: { count: candidate.count, sizeIn: candidate.sizeIn } };
-  const selected =
-    target === candidate.count
-      ? candidate
-      : await renderLayout(
-          source,
-          shapeAt(cut, candidate.sizeIn),
-          selectPlacements(candidate, target),
-          { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets: candidate.sheetSizes },
-          store,
-        );
-  return { layouts: candidate.id === selected.id ? [candidate] : [candidate, selected] };
-}
-
-function selectPlacements(layout: Layout, target: number): Placement[] {
-  const byColor = new Map<string, Placement[]>();
-  for (const pose of layout.placements) {
-    const color = layout.sheetSizes[pose.sheet]?.material?.materialId ?? "";
-    const group = byColor.get(color) ?? [];
-    group.push(pose);
-    byColor.set(color, group);
-  }
-  // Share the target across selected colors, then fill from any remaining capacity.
-  const selected: Placement[] = [];
-  for (let index = 0; selected.length < target; index++)
-    for (const group of byColor.values()) {
-      const pose = group[index];
-      if (pose && selected.length < target) selected.push(pose);
+      .sort((a, b) => b.count - a.count)[0];
+    const placements =
+      previous?.placements ?? nest(shape.searchPoints, sheets, settings.gapMm, deadline, attempt);
+    audit(shape.points, placements, settings.gapMm, sheets);
+    return { shape, placements, sizeIn };
+  };
+  let candidate = search(settings.badgeSizeIn);
+  if (target !== undefined && !options.fixedSize) {
+    const minimum =
+      options.minSizeIn ?? (settings.badgeSizeIn > 2.2 ? settings.badgeSizeIn : MIN_BADGE_SIZE_IN);
+    const units = (size: number) => Math.round(size / BADGE_SIZE_STEP_IN);
+    const size = (unit: number) => Number((unit * BADGE_SIZE_STEP_IN).toFixed(2));
+    try {
+      if (candidate.placements.length >= target) {
+        let lower = units(candidate.sizeIn);
+        let upper =
+          Math.floor(
+            (options.maxSizeIn ?? Math.max(MAX_BADGE_SIZE_IN, candidate.sizeIn)) /
+              BADGE_SIZE_STEP_IN +
+              1e-8,
+          ) + 1;
+        for (let step = 1; lower + step < upper; step *= 2) {
+          const next = lower + step;
+          const found = search(size(next));
+          if (found.placements.length < target) {
+            upper = next;
+            break;
+          }
+          candidate = found;
+          lower = next;
+        }
+        while (upper - lower > 1) {
+          const middle = Math.floor((lower + upper) / 2);
+          const found = search(size(middle));
+          if (found.placements.length >= target) {
+            candidate = found;
+            lower = middle;
+          } else upper = middle;
+        }
+      } else {
+        for (
+          let unit = units(candidate.sizeIn) - 1;
+          unit >= Math.ceil(minimum / BADGE_SIZE_STEP_IN - 1e-8);
+          unit--
+        ) {
+          const found = search(size(unit));
+          if (found.placements.length > candidate.placements.length) candidate = found;
+          if (found.placements.length >= target) {
+            candidate = found;
+            break;
+          }
+        }
+      }
+    } catch (cause) {
+      if (
+        !(cause instanceof Error) ||
+        !cause.message.startsWith("Packing reached its time budget.") ||
+        candidate.placements.length < target
+      )
+        throw cause;
     }
-  return selected;
+  }
+  if (!candidate.placements.length)
+    throw new Error("The cut outline does not fit on the selected sheets.");
+  const layout = await renderLayout(
+    source,
+    candidate.shape,
+    candidate.placements,
+    { sizeIn: candidate.sizeIn, gapMm: settings.gapMm, sheets },
+    store,
+  );
+  return {
+    layouts: [layout],
+    ...(target !== undefined && layout.count < target
+      ? { shortfall: { count: layout.count, sizeIn: layout.sizeIn } }
+      : {}),
+  };
 }
 
 async function renderLayout(

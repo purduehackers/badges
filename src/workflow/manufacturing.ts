@@ -1,29 +1,33 @@
+import { Resvg } from "@resvg/resvg-js";
 import { XMLSerializer } from "@xmldom/xmldom";
 
-import { assertSimple, bounds, flatten } from "./geometry.ts";
 import { inspectSvg, parseSvg } from "./svg.ts";
 
-export function physicalDimensions(cut: string, role: "badge" | "stamp", sizeIn: number) {
-  const points = flatten(cut, 0.001);
-  assertSimple(points);
-  const box = bounds(points);
-  const width = box.maxX - box.minX,
-    height = box.maxY - box.minY;
+export function physicalDimensions(cuts: string[], role: "badge" | "stamp", sizeIn: number) {
+  // Measure curves directly; export coordinates must not determine tessellation cost.
+  const measured = new Resvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">${cuts.map((cut) => `<path d="${cut}"/>`).join("")}</svg>`,
+    { font: { loadSystemFonts: false } },
+  ).getBBox();
+  if (!measured || measured.width <= 0 || measured.height <= 0)
+    throw new Error("Invalid physical cut dimensions.");
+  const { x, y, width, height } = measured;
+  const box = { minX: x, minY: y, maxX: x + width, maxY: y + height };
   const scale =
     (sizeIn * 25.4) / (role === "stamp" ? Math.min(width, height) : Math.max(width, height));
   if (!Number.isFinite(scale) || scale <= 0) throw new Error("Invalid physical cut dimensions.");
   return { box, scale, widthIn: (width * scale) / 25.4, heightIn: (height * scale) / 25.4 };
 }
 
-/** Physical dimensions are derived from the cut contour, never the export canvas. */
+/** Measure all pieces together, never the export canvas or just the first contour. */
 export function physicalSvg(
   source: string,
   role: "badge" | "stamp",
   sizeIn: number,
   mirror: boolean,
 ): string {
-  const { cut } = inspectSvg(source, role);
-  const { box, scale, widthIn, heightIn } = physicalDimensions(cut, role, sizeIn);
+  const { cuts } = inspectSvg(source, role);
+  const { box, scale, widthIn, heightIn } = physicalDimensions(cuts, role, sizeIn);
   const { root } = parseSvg(source),
     document = root.ownerDocument;
   if (!document) throw new Error("Missing SVG document.");

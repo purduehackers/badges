@@ -248,11 +248,11 @@ class GithubPublisher implements Publisher {
     return { commit, url };
   }
   async link(review: Review): Promise<string> {
-    if (!review.publication || !env.VERCEL_API_TOKEN)
+    if (!review.publication || !env.PHACK_TOKEN)
       throw new Error("Saved files or phack.rs configuration is missing.");
     const { commit, url } = review.publication;
-    const slug = `badge-${review.event?.version ?? ""}`;
-    await writeBadgeLink(slug, url, env.VERCEL_API_TOKEN);
+    const slug = `badge-${review.event?.version.replaceAll(".", "-") ?? ""}`;
+    await writeBadgeLink(slug, url, env.PHACK_TOKEN);
     const shortlink = `https://phack.rs/${slug}`;
     const redirect = await fetch(shortlink, {
       redirect: "manual",

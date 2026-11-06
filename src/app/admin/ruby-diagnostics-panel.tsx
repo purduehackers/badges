@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ph/button";
+
 import { useState } from "react";
 import { collectRuby, downloadReport, redact, type RubyReport } from "@/lib/ruby-diagnostics";
 import type { RubyConnection, RubyReceipt } from "@/lib/ruby-production";
@@ -58,11 +60,11 @@ export default function RubyDiagnostics({
         </p>
       )}
       <div className="ruby-actions">
-        <button onClick={collect} disabled={disabled || running}>
+        <Button onClick={collect} disabled={disabled || running}>
           {running ? "Collecting…" : "Collect debug report"}
-        </button>
+        </Button>
         {report && !running && (
-          <button
+          <Button
             onClick={() =>
               downloadReport(
                 redact(
@@ -73,7 +75,7 @@ export default function RubyDiagnostics({
             }
           >
             Download report
-          </button>
+          </Button>
         )}
       </div>
       {error && (

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { badgeStock, badgeStockChanges, badgeStockPublications } from "../server/db/index.ts";
 import type { Db } from "../server/db/index.ts";
 import { DISCORD_GUILD_ID } from "../server/platform.ts";
-import { and, asc, count, desc, eq, gt } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 
 import { includesMaterial, reviewMaterials, stockPlanSchema } from "./contracts.ts";
 import type { BadgeMaterial, CuttingSheet, Review, SheetBatch, StockPlan } from "./contracts.ts";
@@ -57,7 +57,13 @@ async function reservedCounts(db: Pick<Db, "select">): Promise<Map<string, numbe
 }
 
 function publicationKey(review: Review): string {
-  return `${review.id}:${review.generation}`;
+  return review.stockReceipt ?? `${review.id}:${review.generation}`;
+}
+
+function coveredBy(plan: StockPlan, allocated: StockPlan): boolean {
+  return plan.every((sheet) =>
+    allocated.some((item) => item.itemId === sheet.itemId && item.quantity >= sheet.quantity),
+  );
 }
 
 class BadgeInventory {
@@ -66,27 +72,23 @@ class BadgeInventory {
     this.db = db;
   }
 
-  async available(): Promise<StockItem[]> {
+  async acrylic(batch: SheetBatch = []): Promise<StockItem[]> {
     const records = await this.db
       .select()
       .from(badgeStock)
-      .where(gt(badgeStock.quantity, 0))
       .orderBy(asc(badgeStock.materialId), asc(badgeStock.widthIn), asc(badgeStock.heightIn));
-    return this.withReservations(records);
+    const selected = new Set(batch.map(sheetKey));
+    return (await this.withReservations(records)).filter(
+      (item) =>
+        ACRYLIC_MATERIALS.some((material) => material.id === item.materialId) &&
+        (item.quantity > item.reserved || selected.has(sheetKey({ ...item, material: item }))),
+    );
   }
 
   private async withReservations(records: StockItem[] | (typeof badgeStock.$inferSelect)[]) {
     const reserved = await reservedCounts(this.db);
     return records.map((entry) =>
       stockItemSchema.parse({ ...entry, reserved: reserved.get(entry.id) ?? 0 }),
-    );
-  }
-
-  async acrylic(): Promise<StockItem[]> {
-    return (await this.available()).filter(
-      (item) =>
-        item.quantity > item.reserved &&
-        ACRYLIC_MATERIALS.some((material) => material.id === item.materialId),
     );
   }
 
@@ -139,18 +141,41 @@ class BadgeInventory {
     return selected.length ? selected : undefined;
   }
 
-  async plan(materials: BadgeMaterial[], usedSheets: CuttingSheet[]): Promise<StockPlan> {
+  private async allocation(review?: Review): Promise<StockPlan> {
+    if (!review?.stockReceipt) return [];
+    if (!review.stockReceipt.startsWith(`${review.id}:`))
+      throw new InventoryError("The material receipt belongs to another batch.");
+    const [receipt] = await this.db
+      .select()
+      .from(badgeStockPublications)
+      .where(eq(badgeStockPublications.id, review.stockReceipt));
+    if (!receipt || receipt.state !== "consumed")
+      throw new InventoryError("The published batch has no completed material receipt.");
+    return stockPlanSchema.parse(JSON.parse(receipt.plan));
+  }
+
+  async plan(
+    materials: BadgeMaterial[],
+    usedSheets: CuttingSheet[],
+    review?: Review,
+  ): Promise<StockPlan> {
     const batch = resolveSheets(
       usedSheets.map((sheet) => ({ ...sheet, quantity: 1 })),
       materials,
     );
     const stock = await this.sheets(materials);
+    const allocated = await this.allocation(review);
     return stockPlanSchema.parse(
       batch.map((sheet) => {
         const item = stock.find(
           (candidate) => sheetKey({ ...candidate, material: candidate }) === sheetKey(sheet),
         );
-        if (!item || item.quantity - item.reserved < sheet.quantity)
+        const credit = allocated.find((entry) => entry.itemId === item?.id)?.quantity ?? 0;
+        if (
+          !item ||
+          item.quantity - item.reserved + credit < sheet.quantity ||
+          (review?.stockReceipt && credit < sheet.quantity)
+        )
           throw new InventoryError(
             `The selected sheets are no longer available: ${sheet.quantity} × ${sheetLabel(sheet)} in, ${sheet.material ? materialDescription(sheet.material) : "acrylic"}. Change the sheets, or ask an organizer to update inventory.`,
           );
@@ -181,6 +206,12 @@ class BadgeInventory {
         .from(badgeStockPublications)
         .where(eq(badgeStockPublications.id, id));
       if (existing) {
+        if (
+          existing.state === "consumed" &&
+          review.stockReceipt &&
+          coveredBy(plan, stockPlanSchema.parse(JSON.parse(existing.plan)))
+        )
+          return;
         if (existing.plan !== JSON.stringify(plan))
           throw new InventoryError("This publication already has different sheets reserved.");
         return;
@@ -210,6 +241,18 @@ class BadgeInventory {
         .where(eq(badgeStockPublications.id, id));
       if (!reservation) throw new InventoryError("Reserve the cutting sheets before publishing.");
       if (reservation.state === "consumed") {
+        if (review.stockReceipt) {
+          if (
+            !review.stockPlan ||
+            !coveredBy(review.stockPlan, stockPlanSchema.parse(JSON.parse(reservation.plan)))
+          )
+            throw new InventoryError("The revision exceeds the sheets allocated to this batch.");
+          await tx
+            .update(badgeStockPublications)
+            .set({ commit: publication.commit })
+            .where(eq(badgeStockPublications.id, id));
+          return;
+        }
         if (reservation.commit !== publication.commit)
           throw new InventoryError("The saved files do not match this material receipt.");
         return;

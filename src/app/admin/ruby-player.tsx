@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ph/button";
+
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import { materialSummary, type ProductionFile } from "@/lib/ruby-batch";
@@ -10,7 +12,7 @@ import {
   type RubyJob,
   type RubyReceipt,
 } from "@/lib/ruby-production";
-import { FileThumbnail } from "./ruby-design-preview";
+import { FileThumbnail } from "@/components/design-preview";
 import RubyStampPlacement from "./ruby-stamp-placement";
 import { controlSimulation, readSimulation } from "@/lib/ruby-simulator";
 
@@ -152,13 +154,13 @@ export default function RubyPlayer({
     <>
       <div className="ruby-player-heading">
         <h1>{complete ? "Batch complete" : "Produce"}</h1>
-        <button
+        <Button
           className={complete ? "ruby-primary" : "ruby-text-button"}
           onClick={canEdit ? onEdit : onNew}
           disabled={busy}
         >
           {canEdit ? "Back to files" : "New batch"}
-        </button>
+        </Button>
       </div>
       <div className="ruby-player">
         <aside className="ruby-playlist">
@@ -171,7 +173,7 @@ export default function RubyPlayer({
           <ol>
             {entries.map((entry, index) => (
               <li key={`${entry.file.digest}:${entry.file.file.name}`}>
-                <button
+                <Button
                   className={selected === index ? "selected" : ""}
                   aria-pressed={selected === index}
                   onClick={() => setSelection(index)}
@@ -192,7 +194,7 @@ export default function RubyPlayer({
                       {stale ? "Status unavailable" : jobLabel(entry.receipt)}
                     </span>
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ol>
@@ -202,9 +204,9 @@ export default function RubyPlayer({
             </p>
           )}
           {needsRetry && !busy && (
-            <button className="ruby-text-button" onClick={onCheck}>
+            <Button className="ruby-text-button" onClick={onCheck}>
               Retry queue
-            </button>
+            </Button>
           )}
         </aside>
         <section className="ruby-player-main" aria-label="Laser player">
@@ -242,9 +244,9 @@ export default function RubyPlayer({
               selection !== undefined &&
               activeIndex >= 0 &&
               selection !== activeIndex && (
-                <button className="ruby-text-button" onClick={() => setSelection(undefined)}>
+                <Button className="ruby-text-button" onClick={() => setSelection(undefined)}>
                   Follow current job
-                </button>
+                </Button>
               )}
           </div>
           {file?.kind === "stamp" && !connection.simulated && label !== "Finished" && (
@@ -294,7 +296,7 @@ export default function RubyPlayer({
                 const state = jobLabel(entry.receipt);
                 const value = state === "Finished" ? 100 : (entry.progress ?? 0);
                 return (
-                  <button
+                  <Button
                     key={entry.file.file.name}
                     aria-label={`Preview job ${index + 1}: ${entry.file.file.name}`}
                     className={index === selected ? "selected" : ""}
@@ -308,7 +310,7 @@ export default function RubyPlayer({
                       {String(index + 1).padStart(2, "0")}{" "}
                       {entry.file.kind === "stamp" ? "Stamp" : "Acrylic"}
                     </span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -320,7 +322,7 @@ export default function RubyPlayer({
           {!complete && !placingStamp && (
             <div className="ruby-playback">
               {simulation ? (
-                <button
+                <Button
                   className="ruby-primary"
                   disabled={busy || stale || changing || !nextJob}
                   onClick={() =>
@@ -334,7 +336,7 @@ export default function RubyPlayer({
                       : nextJob?.status === "Paused"
                         ? "Resume"
                         : "Start batch"}
-                </button>
+                </Button>
               ) : (
                 <a
                   href={rubyUrl}

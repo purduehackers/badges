@@ -1,8 +1,10 @@
 "use client";
 
+import { Button } from "@/components/ph/button";
+
 import dynamic from "next/dynamic";
 import { materialSummary, type ProductionFile } from "@/lib/ruby-batch";
-const DesignPreview = dynamic(() => import("./ruby-design-preview"), {
+const DesignPreview = dynamic(() => import("@/components/design-preview"), {
   ssr: false,
   loading: () => <div className="ruby-preview-loading">Preparing preview…</div>,
 });
@@ -93,12 +95,12 @@ export default function RubyReview({
               ? "Jobs run in this browser only."
               : "Uses the saved badge and stamp settings in Ruby."}
           </p>
-          <button className="ruby-primary" disabled={busy} onClick={onConfirm}>
+          <Button className="ruby-primary" disabled={busy} onClick={onConfirm}>
             Queue {files.length} {files.length === 1 ? "job" : "jobs"}
-          </button>
-          <button className="ruby-text-button" disabled={busy} onClick={onBack}>
+          </Button>
+          <Button className="ruby-text-button" disabled={busy} onClick={onBack}>
             Back to files
-          </button>
+          </Button>
         </aside>
       </div>
     </>

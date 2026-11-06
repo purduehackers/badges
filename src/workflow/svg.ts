@@ -5,7 +5,6 @@ import svgpath from "svgpath";
 
 import { checkIds, hash } from "./contracts.ts";
 import type { Check } from "./contracts.ts";
-import { assertSimple, flatten } from "./geometry.ts";
 
 const namespace = "http://www.w3.org/2000/svg";
 const drawable = new Set([
@@ -41,6 +40,9 @@ const allowedAttributes = new Set([
   "opacity",
   "display",
   "fill-rule",
+  "clip-rule",
+  "clip-path",
+  "mask",
   "stroke-linecap",
   "stroke-linejoin",
   "stroke-miterlimit",
@@ -64,6 +66,9 @@ const allowedStyles = new Set([
   "opacity",
   "display",
   "fill-rule",
+  "clip-rule",
+  "clip-path",
+  "mask",
   "stroke-linecap",
   "stroke-linejoin",
   "stroke-miterlimit",
@@ -87,7 +92,8 @@ export function parseSvg(input: string) {
   if (elements.length > 5000)
     throw new Error("SVG has too many elements. Simplify it before uploading.");
   for (const node of elements) {
-    if (["script", "foreignObject", "use", "image", "style"].includes(node.localName ?? "")) {
+    if (node.localName === "image") throw new Error("SVG contains an embedded image element.");
+    if (["script", "foreignObject", "use", "style"].includes(node.localName ?? "")) {
       throw new Error(
         "Only self-contained vector SVGs are accepted. Remove images, linked objects, scripts, and stylesheets.",
       );
@@ -104,6 +110,8 @@ export function parseSvg(input: string) {
       parent = parent.parentNode;
     }
     for (const attribute of Array.from(node.attributes)) {
+      if (["clip-path", "mask"].includes(attribute.name) && localReference(attribute.value))
+        continue;
       if (
         /^on|href$/iu.test(attribute.name) ||
         /url\s*\(|@import|expression\s*\(/iu.test(attribute.value)
@@ -113,6 +121,92 @@ export function parseSvg(input: string) {
     }
   }
   return { root, elements };
+}
+
+function localReference(value: string): string | undefined {
+  return /^url\(\s*["']?#([\w.-]+)["']?\s*\)$/u.exec(value)?.[1];
+}
+
+/** Figma's solid white vector masks affect engraving, never cutting geometry. */
+function vectorMask(element: Element, reference: string): boolean {
+  const id = localReference(reference);
+  const masks = Array.from(element.ownerDocument?.getElementsByTagName("mask") ?? []).filter(
+    (mask) => mask.getAttribute("id") === id,
+  );
+  const mask = masks[0],
+    path = mask?.children[0];
+  return Boolean(
+    id &&
+    masks.length === 1 &&
+    mask?.children.length === 1 &&
+    path?.localName === "path" &&
+    !path.children.length &&
+    color(path.getAttribute("fill") ?? "") === "#ffffff" &&
+    Array.from(path.attributes).every((attribute) =>
+      ["d", "fill", "fill-rule", "clip-rule"].includes(attribute.name),
+    ) &&
+    Array.from(mask.attributes).every((attribute) =>
+      ["id", "style", "maskUnits", "x", "y", "width", "height"].includes(attribute.name),
+    ) &&
+    /^(?:mask-type\s*:\s*(?:luminance|alpha)\s*;?)?$/u.test(
+      (mask.getAttribute("style") ?? "").trim(),
+    ) &&
+    ["", "userSpaceOnUse", "objectBoundingBox"].includes(mask.getAttribute("maskUnits") ?? ""),
+  );
+}
+
+/** Keep export-frame clipping, but do not certify contours that it would crop. */
+function containsArtwork(element: Element, reference: string): boolean {
+  const id = localReference(reference);
+  const clips = Array.from(element.ownerDocument?.getElementsByTagName("clipPath") ?? []).filter(
+    (clip) => clip.getAttribute("id") === id,
+  );
+  const clip = clips[0],
+    rect = clip?.children[0];
+  if (
+    !id ||
+    clips.length !== 1 ||
+    clip?.children.length !== 1 ||
+    rect?.localName !== "rect" ||
+    Array.from(clip.attributes).some(
+      (attribute) => !["id", "clipPathUnits"].includes(attribute.name),
+    ) ||
+    !["", "userSpaceOnUse"].includes(clip.getAttribute("clipPathUnits") ?? "") ||
+    Array.from(rect.attributes).some(
+      (attribute) => !["x", "y", "width", "height", "fill"].includes(attribute.name),
+    )
+  )
+    return false;
+  const x = Number(rect.getAttribute("x") ?? 0),
+    y = Number(rect.getAttribute("y") ?? 0),
+    width = Number(rect.getAttribute("width")),
+    height = Number(rect.getAttribute("height"));
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return false;
+  const drawing = element.cloneNode(true) as Element;
+  drawing.removeAttribute("transform");
+  for (const node of [drawing, ...Array.from(drawing.getElementsByTagName("*"))]) {
+    node.removeAttribute("clip-path");
+    // Cutting follows the path centerline, not the displayed stroke's width.
+    if (drawable.has(node.localName ?? "")) {
+      node.setAttribute("stroke", "none");
+      node.setAttribute("fill", "black");
+      node.setAttribute(
+        "style",
+        [node.getAttribute("style"), "stroke:none", "fill:black"].filter(Boolean).join(";"),
+      );
+    }
+  }
+  const source = new XMLSerializer().serializeToString(drawing);
+  const box = new Resvg(`<svg xmlns="${namespace}" width="1" height="1">${source}</svg>`, {
+    font: { loadSystemFonts: false },
+  }).getBBox();
+  return Boolean(
+    box &&
+    box.x >= x &&
+    box.y >= y &&
+    box.x + box.width <= x + width &&
+    box.y + box.height <= y + height,
+  );
 }
 
 function color(value: string): string | undefined {
@@ -150,16 +244,17 @@ function localStyle(element: Element): Map<string, string> {
 export interface SvgFacts {
   checks: Check[];
   source: string;
-  cut: string;
+  cuts: string[];
 }
 
 interface Observations {
   unknown: Set<string>;
   palette: Set<string>;
-  strokes: number;
   text: number;
   cuts: string[];
-  badCuts: boolean;
+  filledCuts: boolean;
+  invalidCuts: boolean;
+  unsupportedCuts: boolean;
 }
 
 function observe(
@@ -167,9 +262,28 @@ function observe(
   inherited: Map<string, string>,
   ancestorTransform: string,
   observations: Observations,
+  masked = false,
 ): void {
   const tag = element.localName ?? "";
+  if (tag === "mask") return;
+  if (tag === "defs") {
+    if (
+      Array.from(element.children).some(
+        (child) => !["clipPath", "mask"].includes(child.localName ?? ""),
+      )
+    )
+      observations.unknown.add("artwork in defs");
+    return;
+  }
   const local = localStyle(element);
+  const mask = local.get("mask");
+  if (mask && mask !== "none") {
+    masked = true;
+    if (!vectorMask(element, mask)) observations.unknown.add("unsupported vector mask");
+  }
+  const clip = local.get("clip-path");
+  if (clip && clip !== "none" && !containsArtwork(element, clip))
+    observations.unknown.add("clipping that changes the artwork geometry");
   const style = new Map(inherited);
   for (const property of properties) {
     const value = local.get(property);
@@ -191,8 +305,53 @@ function observe(
   if (!supported.has(tag) || (tag === "svg" && element.parentNode?.nodeType === 1))
     observations.unknown.add(tag);
   const transform = `${ancestorTransform} ${element.getAttribute("transform") ?? ""}`.trim();
-  if (drawable.has(tag)) observePaint(element, style, transform, observations);
-  for (const child of Array.from(element.children)) observe(child, style, transform, observations);
+  if (drawable.has(tag)) {
+    if (masked && color(style.get("stroke") ?? "none") === "#ff0000")
+      observations.unsupportedCuts = true;
+    observePaint(element, style, transform, observations);
+  }
+  for (const child of Array.from(element.children))
+    observe(child, style, transform, observations, masked);
+}
+
+/** SVG primitives are equivalent closed cutting contours, not unsupported effects. */
+function cuttingPath(element: Element): string | undefined {
+  const number = (name: string, fallback = 0) => {
+    const value = element.getAttribute(name);
+    return value === null || value === ""
+      ? fallback
+      : /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/iu.test(value)
+        ? Number(value)
+        : NaN;
+  };
+  if (element.localName === "path") return element.getAttribute("d") ?? "";
+  if (element.localName === "polygon") {
+    const points = (element.getAttribute("points") ?? "")
+      .trim()
+      .split(/[\s,]+/u)
+      .map(Number);
+    return points.length >= 6 && points.length % 2 === 0 && points.every(Number.isFinite)
+      ? `M${points.join(" ")}Z`
+      : undefined;
+  }
+  if (["circle", "ellipse"].includes(element.localName ?? "")) {
+    const x = number("cx"),
+      y = number("cy");
+    const rx = number(element.localName === "circle" ? "r" : "rx"),
+      ry = element.localName === "circle" ? rx : number("ry");
+    if (![x, y, rx, ry].every(Number.isFinite) || rx <= 0 || ry <= 0) return;
+    return `M${x - rx} ${y}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 ${-rx * 2} 0Z`;
+  }
+  if (element.localName !== "rect") return;
+  const x = number("x"),
+    y = number("y"),
+    w = number("width"),
+    h = number("height");
+  const rx = Math.min(number("rx", number("ry")), w / 2),
+    ry = Math.min(number("ry", number("rx")), h / 2);
+  if (![x, y, w, h, rx, ry].every(Number.isFinite) || w <= 0 || h <= 0 || rx < 0 || ry < 0) return;
+  if (!rx || !ry) return `M${x} ${y}h${w}v${h}h${-w}Z`;
+  return `M${x + rx} ${y}H${x + w - rx}a${rx} ${ry} 0 0 1 ${rx} ${ry}V${y + h - ry}a${rx} ${ry} 0 0 1 ${-rx} ${ry}H${x + rx}a${rx} ${ry} 0 0 1 ${-rx} ${-ry}V${y + ry}a${rx} ${ry} 0 0 1 ${rx} ${-ry}Z`;
 }
 
 function observePaint(
@@ -205,53 +364,59 @@ function observePaint(
   if (tag === "text") observations.text += 1;
   const fill = style.get("fill") ?? "#000000";
   const stroke = style.get("stroke") ?? "none";
-  if (color(fill) === "#ff0000") observations.badCuts = true;
+  if (color(fill) === "#ff0000") observations.filledCuts = true;
   for (const paint of [fill, stroke]) {
     if (paint === "none") continue;
     const hex = color(paint);
     if (hex === undefined) observations.unknown.add(`paint ${paint}`);
     else observations.palette.add(hex);
   }
-  if (stroke === "none") return;
-  if (color(stroke) !== "#ff0000") {
-    observations.strokes += 1;
+  if (color(stroke) !== "#ff0000") return;
+  const path = cuttingPath(element);
+  if (path === undefined) {
+    observations.unsupportedCuts = true;
     return;
   }
-  const path = element.getAttribute("d") ?? "";
   const parsed = svgpath(path);
-  if (
-    tag !== "path" ||
-    ("err" in parsed && parsed.err !== "") ||
-    fill !== "none" ||
-    !/[zZ]\s*$/u.test(path) ||
-    (path.match(/[mM]/gu)?.length ?? 0) !== 1 ||
-    /[aA]/u.test(path)
-  ) {
-    observations.badCuts = true;
+  if (("err" in parsed && parsed.err !== "") || !path.trim()) {
+    observations.invalidCuts = true;
     return;
   }
-  observations.cuts.push(parsed.transform(transform).abs().unshort().toString());
+  // Split compound paths for measurement; retain the original SVG for cutting.
+  const paths = parsed.transform(transform).abs().unshort().unarc().toString().split(/(?=M)/u);
+  for (const contour of paths.filter(Boolean)) {
+    if (!/[zZ]\s*$/u.test(contour)) observations.invalidCuts = true;
+    else observations.cuts.push(contour);
+  }
 }
 
 function checkCut(observation: Observations): Pick<Check, "status" | "detail"> {
-  const cut = observation.cuts[0];
-  if (observation.cuts.length !== 1 || observation.badCuts || !cut)
+  if (observation.invalidCuts)
+    return { status: "fail", detail: "Close each red cutting outline and repair invalid paths." };
+  if (observation.unsupportedCuts)
     return {
       status: "unknown",
-      detail:
-        "Export one closed, unfilled red exterior path with cubic/quadratic/line segments. Compound, open, arc, or multiple cut outlines need a simplified export.",
+      detail: "I can’t verify this type of cutting shape yet. Ask an organizer to check it.",
     };
+  if (!observation.cuts.length)
+    return { status: "fail", detail: "Add a closed red cutting outline." };
   try {
-    assertSimple(flatten(cut, 0.01));
+    for (const cut of observation.cuts) {
+      const box = new Resvg(
+        `<svg xmlns="${namespace}" width="1" height="1"><path d="${cut}"/></svg>`,
+        { font: { loadSystemFonts: false } },
+      ).getBBox();
+      if (!box || box.width <= 0 || box.height <= 0)
+        return { status: "fail", detail: "The cutting outline must enclose an area." };
+    }
     return {
       status: "pass",
-      detail:
-        "One closed, unfilled red cut path without crossings or retraced edges. Geometry is checked again at manufacturing size.",
+      detail: "Closed red cutting outlines. Multiple pieces and crossing paths are preserved.",
     };
-  } catch (cause) {
+  } catch {
     return {
-      status: "fail",
-      detail: cause instanceof Error ? cause.message : "Invalid cut geometry.",
+      status: "unknown",
+      detail: "I couldn’t measure these cutting outlines. Ask an organizer to check them.",
     };
   }
 }
@@ -261,10 +426,11 @@ export function inspectSvg(source: string, role: "badge" | "stamp"): SvgFacts {
   const observation: Observations = {
     unknown: new Set(),
     palette: new Set(),
-    strokes: 0,
     text: 0,
     cuts: [],
-    badCuts: false,
+    filledCuts: false,
+    invalidCuts: false,
+    unsupportedCuts: false,
   };
   observe(root, new Map(), "", observation);
   const disallowed = [...observation.palette].filter(
@@ -295,17 +461,17 @@ export function inspectSvg(source: string, role: "badge" | "stamp"): SvgFacts {
       detail: observation.text ? "Convert all text to vector outlines." : "No live text elements.",
     },
     fills: {
-      status: observation.strokes ? "fail" : "pass",
-      detail: observation.strokes
-        ? "Outline engraving strokes. Red cutting strokes stay strokes."
-        : "Engraving uses fills; cutting uses red strokes.",
+      status: observation.filledCuts ? "fail" : "pass",
+      detail: observation.filledCuts
+        ? "Remove red fills from artwork. Use red strokes for cutting."
+        : "No red-filled artwork. Cutting paths may also have grayscale fills.",
     },
     cut: checkCut(observation),
   };
   return {
     checks: checkIds.map((id) => ({ id, role, ...statuses[id], evidenceId: hash(source) })),
     source: new XMLSerializer().serializeToString(root),
-    cut: observation.cuts[0] ?? "",
+    cuts: observation.cuts,
   };
 }
 
@@ -346,9 +512,7 @@ function inspectVisibility(
   local: Map<string, string>,
   observations: Observations,
 ): void {
-  const tag = element.localName;
   // Invisible or reusable artwork cannot establish visible manufacturing evidence.
-  if (tag === "defs" && element.children.length) observations.unknown.add("artwork in defs");
   for (const key of ["opacity", "fill-opacity", "stroke-opacity"]) {
     const value = local.get(key);
     if (value !== undefined && !["1", "100%", "inherit"].includes(value))

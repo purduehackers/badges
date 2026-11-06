@@ -37,10 +37,7 @@ export function BadgeScene({ svgUrl, material }: { svgUrl: string; material: Acr
     <div className="relative h-full w-full">
       <div ref={viewport} className="h-full w-full" />
       {error && (
-        <p
-          role="alert"
-          className="absolute inset-x-4 top-4 rounded bg-neutral-950 p-4 text-red-300"
-        >
+        <p role="alert" className="absolute inset-x-4 top-4 bg-background p-4 text-ph-orange">
           {error}
         </p>
       )}

@@ -20,7 +20,11 @@ export function designerText(text: string, fallback = unclearReply): string {
   return clean ? clean.slice(0, 1800) : fallback;
 }
 
-export function findingGuidance(finding: Pick<Check, "id" | "role">): string {
+export function findingGuidance(finding: Check): string {
+  if (finding.status === "unknown")
+    return finding.id === "cut"
+      ? finding.detail
+      : "I can’t verify some features in this SVG yet. Ask an organizer to check it.";
   switch (finding.id) {
     case "supported":
       return "Flatten effects into vector shapes, then export a new SVG.";
@@ -33,15 +37,14 @@ export function findingGuidance(finding: Pick<Check, "id" | "role">): string {
     case "text":
       return "Convert your lettering to outlines, then export a new SVG.";
     case "fills":
-      return "Outline the strokes in your artwork. Keep the red cutting outline as a stroke.";
+      return "Remove red fills from your artwork. Use red strokes for cutting.";
     case "cut":
-      return "Join the outside cutting line into 1 closed red outline. Remove its fill, crossings and extra outlines.";
+      return finding.detail;
   }
 }
 
-/** Only evidence from the current uploaded design can establish a check's result. */
-export function verificationChecks(review: Review, role: Criterion) {
-  const labels: Record<Check["id"], string> = {
+export function verificationLabels(role: Criterion) {
+  return {
     supported: "No unsupported effects or linked artwork",
     palette:
       role === "badge"
@@ -49,9 +52,14 @@ export function verificationChecks(review: Review, role: Criterion) {
         : "Black-and-white artwork with red only for cutting",
     vectors: "Vector artwork with no embedded images",
     text: "No editable text",
-    fills: "Engraving uses filled shapes",
-    cut: "One closed, unfilled red cutting outline without crossings",
-  };
+    fills: "No red-filled artwork",
+    cut: "Closed red cutting outlines",
+  } satisfies Record<Check["id"], string>;
+}
+
+/** Only evidence from the current uploaded design can establish a check's result. */
+export function verificationChecks(review: Review, role: Criterion) {
+  const labels = verificationLabels(role);
   return checkIds.map((id) => {
     const check = review[role]
       ? review.checks.find(
@@ -89,8 +97,10 @@ export function failureGuidance(detail: string): string {
   if (/Attachment is unavailable|Reattach|expired/iu.test(detail))
     return "I couldn’t open that upload. Upload the SVG again.";
   if (/Attach one|Upload one/iu.test(detail)) return "Upload your badge or stamp as an SVG.";
-  if (/raster|external|image element/iu.test(detail))
+  if (/raster|image element/iu.test(detail))
     return "Use vector artwork instead of pasted images, then export a new SVG.";
+  if (/external reference|executable content|linked objects/iu.test(detail))
+    return "This SVG uses linked content or an unsupported feature. Export a self-contained SVG and upload it again.";
   if (/SVG|XML|DOCTYPE/iu.test(detail))
     return "I couldn’t read that design. Export a plain SVG from your design app and upload it again.";
   if (/layout search found/iu.test(detail)) return detail;
@@ -186,14 +196,13 @@ export function reviewPrompt(review: Review): string {
       return "Checking your files…";
     case "fix": {
       const role = fixRole(review);
-      const fixes = [
-        ...new Set(
-          review.checks
-            .filter((check) => check.role === role && check.status !== "pass")
-            .map(findingGuidance),
-        ),
-      ];
-      return `${fixes.join("\n\n")}\n\nUpload your updated ${role} when it’s ready.`;
+      const findings = review.checks.filter(
+        (check) => check.role === role && check.status !== "pass",
+      );
+      const fixes = [...new Set(findings.map(findingGuidance))];
+      return findings.some((check) => check.status === "fail")
+        ? `${fixes.join("\n\n")}\n\nUpload your updated ${role} when it’s ready.`
+        : fixes.join("\n\n");
     }
     case "event":
       return "Which Hack Night are these designs for?";
@@ -212,7 +221,8 @@ export function reviewPrompt(review: Review): string {
     case "layout": {
       const layout = review.layouts.find((candidate) => candidate.id === review.selectedLayout);
       const sheets = new Set(layout?.placements.map((placement) => placement.sheet)).size;
-      return `This layout fits ${layout?.count} badges on ${sheets === 1 ? "one sheet" : `${sheets} sheets`}.`;
+      const extra = (layout?.count ?? 0) - (review.targetCount ?? 0);
+      return `This layout fits ${layout?.count} badges on ${sheets === 1 ? "one sheet" : `${sheets} sheets`}.${extra > 0 && review.targetCount ? ` That’s ${extra} extra beyond your target of ${review.targetCount}.` : ""}`;
     }
     case "publishing":
       return "Saving your files…";
