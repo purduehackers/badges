@@ -1,11 +1,10 @@
 import { XMLSerializer } from "@xmldom/xmldom";
 
-import { assertSimple, bounds, flatten } from "./geometry.ts";
+import { bounds, flatten } from "./geometry.ts";
 import { inspectSvg, parseSvg } from "./svg.ts";
 
-export function physicalDimensions(cut: string, role: "badge" | "stamp", sizeIn: number) {
-  const points = flatten(cut, 0.001);
-  assertSimple(points);
+export function physicalDimensions(cuts: string[], role: "badge" | "stamp", sizeIn: number) {
+  const points = cuts.flatMap((cut) => flatten(cut, 0.001));
   const box = bounds(points);
   const width = box.maxX - box.minX,
     height = box.maxY - box.minY;
@@ -15,15 +14,15 @@ export function physicalDimensions(cut: string, role: "badge" | "stamp", sizeIn:
   return { box, scale, widthIn: (width * scale) / 25.4, heightIn: (height * scale) / 25.4 };
 }
 
-/** Physical dimensions are derived from the cut contour, never the export canvas. */
+/** Measure all pieces together, never the export canvas or just the first contour. */
 export function physicalSvg(
   source: string,
   role: "badge" | "stamp",
   sizeIn: number,
   mirror: boolean,
 ): string {
-  const { cut } = inspectSvg(source, role);
-  const { box, scale, widthIn, heightIn } = physicalDimensions(cut, role, sizeIn);
+  const { cuts } = inspectSvg(source, role);
+  const { box, scale, widthIn, heightIn } = physicalDimensions(cuts, role, sizeIn);
   const { root } = parseSvg(source),
     document = root.ownerDocument;
   if (!document) throw new Error("Missing SVG document.");

@@ -171,7 +171,7 @@ async function arrange(
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const { layouts, shortfall } = await pack(
     source,
-    inspectSvg(source, "badge").cut,
+    inspectSvg(source, "badge").cuts,
     { ...review.settings, badgeSizeIn: badgeSize(review) ?? review.settings.badgeSizeIn },
     store,
     sheets,
@@ -262,8 +262,12 @@ async function prepare(
   const badge = physicalSvg(badgeSource, "badge", sizeIn, false);
   const impression = physicalSvg(stampSource, "stamp", 1.5, false);
   const stamp = physicalSvg(stampSource, "stamp", 1.5, true);
-  const badgeDimensions = physicalDimensions(inspectSvg(badgeSource, "badge").cut, "badge", sizeIn);
-  const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cut, "stamp", 1.5);
+  const badgeDimensions = physicalDimensions(
+    inspectSvg(badgeSource, "badge").cuts,
+    "badge",
+    sizeIn,
+  );
+  const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cuts, "stamp", 1.5);
   const previews = await renderer(badge, impression, material);
   return {
     ...review,
