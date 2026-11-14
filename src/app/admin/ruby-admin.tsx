@@ -267,15 +267,16 @@ export default function RubyAdmin() {
     setDevice(laser);
     setStatusError("");
     setPhase(
-      saved.some((file) =>
-        duplicateImport(
-          history.current,
-          current.connection,
-          file.digest,
-          file.file.name,
-          file.batchId,
-        ),
-      )
+      !value.simulated &&
+        saved.some((file) =>
+          duplicateImport(
+            history.current,
+            current.connection,
+            file.digest,
+            file.file.name,
+            file.batchId,
+          ),
+        )
         ? "produce"
         : "select",
     );
