@@ -33,15 +33,12 @@ const profiles = [
 ];
 
 export function createSimulation(): RubyConnection {
-  const existing = localStorage.getItem(SIMULATOR_KEY);
-  const state = existing
-    ? simulatorSchema.parse(JSON.parse(existing))
-    : {
-        id: crypto.randomUUID(),
-        updatedAt: Date.now(),
-        playing: false,
-        jobs: [],
-      };
+  const state: RubySimulation = {
+    id: crypto.randomUUID(),
+    updatedAt: Date.now(),
+    playing: false,
+    jobs: [],
+  };
   localStorage.setItem(SIMULATOR_KEY, JSON.stringify(state));
   return {
     simulated: true,
