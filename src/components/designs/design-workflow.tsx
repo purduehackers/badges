@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTask } from "@/lib/use-task";
 import { Button } from "@/components/ph/button";
 import { DitherButton } from "@/components/ph/dither-button";
 import { Field } from "@/components/ph/field";
@@ -12,16 +13,28 @@ import { Checkbox } from "@/components/ph/checkbox";
 import { Badge } from "@/components/ph/badge";
 import { DesignFiles, SheetPicker, CheckResults } from "./design-inputs";
 import {
-  roles,
   designRequest,
+  designCatalogSchema,
+  designChecksSchema,
+  designLayoutSchema,
+  packingInput,
   type DesignCatalog,
   type DesignChecks,
   type DesignPair,
-  type DesignRole,
   type DesignSheet,
   type DesignLayout,
   type DesignUpload,
 } from "@/lib/designs";
+import { readResponse } from "@/lib/http";
+import {
+  ACRYLIC_THICKNESS_MM,
+  STAMP_THICKNESS_MM,
+  MIN_BADGE_SIZE_IN,
+  MAX_BADGE_SIZE_IN,
+  MAX_DESIGN_SIZE_IN,
+  BADGE_SIZE_STEP_IN,
+} from "@/workflow/policy";
+import { criteria, type Criterion, MAX_BADGE_COUNT } from "@/workflow/contracts";
 import type { PreviewDesign } from "@/components/design-preview";
 import { designDraft } from "@/lib/browser-store";
 import { productionFile, savedBatch } from "@/lib/ruby-batch";
@@ -52,25 +65,23 @@ const empty: Draft = {
   phase: "upload",
   confirmed: false,
   target: "90",
-  min: "1.8",
-  max: "2.5",
+  min: String(MIN_BADGE_SIZE_IN),
+  max: String(MAX_BADGE_SIZE_IN),
 };
 
 export default function DesignWorkflow() {
   const [draft, setDraft] = useState<Draft>(empty);
   const [catalog, setCatalog] = useState<DesignCatalog>({ events: [], stock: [], notices: [] });
-  const [loaded, setLoaded] = useState(false),
-    [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const { busy, error, setError, run } = useTask();
   const [renders, setRenders] = useState({ badge: false, stamp: false });
   const renderStatus = useCallback(
-    (role: DesignRole, ready: boolean) =>
+    (role: Criterion, ready: boolean) =>
       setRenders((previous) =>
         previous[role] === ready ? previous : { ...previous, [role]: ready },
       ),
     [],
   );
-  const lock = useRef(false);
   const router = useRouter();
   useEffect(() => {
     const controller = new AbortController();
@@ -89,10 +100,7 @@ export default function DesignWorkflow() {
         }
       });
     void fetch("/api/designs", { signal: controller.signal })
-      .then(async (r) => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      })
+      .then((response) => readResponse(response, designCatalogSchema))
       .then((value: DesignCatalog) => {
         if (live) setCatalog(value);
       })
@@ -108,25 +116,25 @@ export default function DesignWorkflow() {
       live = false;
       controller.abort();
     };
-  }, []);
+  }, [setError]);
   useEffect(() => {
     if (!loaded) return;
     const timer = setTimeout(() => {
       void designDraft(draft).catch((cause) => setError(cause.message));
     }, 250);
     return () => clearTimeout(timer);
-  }, [draft, loaded]);
+  }, [draft, loaded, setError]);
   const materialId = draft.sheets[0]?.material.materialId;
-  const thicknessMm = draft.sheets[0]?.material.thicknessMm ?? 3.175;
+  const thicknessMm = draft.sheets[0]?.material.thicknessMm ?? ACRYLIC_THICKNESS_MM;
   const previews = useMemo<PreviewDesign[]>(
     () =>
       draft.checks && materialId
-        ? roles.map((role) => ({
+        ? criteria.map((role) => ({
             svg: draft.checks![role].svg,
             file: { name: draft.checks![role].name },
             kind: role,
             materialId: role === "badge" ? materialId : undefined,
-            thicknessMm: role === "badge" ? thicknessMm : 2.3,
+            thicknessMm: role === "badge" ? thicknessMm : STAMP_THICKNESS_MM,
             mirrored: false,
             sizeIn: draft.layout?.sizeIn,
           }))
@@ -142,7 +150,7 @@ export default function DesignWorkflow() {
     await designDraft({ ...draft, ...values });
     change(values);
   }
-  function revise(role: DesignRole, file: DesignUpload) {
+  function revise(role: Criterion, file: DesignUpload) {
     setDraft((previous) => ({
       ...previous,
       files: { ...previous.files, [role]: file },
@@ -153,22 +161,9 @@ export default function DesignWorkflow() {
     }));
     setError("");
   }
-  async function run(label: string, action: () => Promise<void>) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(label);
-    setError("");
-    try {
-      await action();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not finish this step. Try again.");
-    } finally {
-      lock.current = false;
-      setBusy("");
-    }
-  }
+
   async function check() {
-    const checks = await designRequest<DesignChecks>(draft.files);
+    const checks = await designRequest(draft.files, designChecksSchema);
     await checkpoint({
       checks,
       layout: undefined,
@@ -177,20 +172,7 @@ export default function DesignWorkflow() {
     });
   }
   async function arrange() {
-    if (
-      !Number.isInteger(Number(draft.target)) ||
-      Number(draft.target) < 1 ||
-      Number(draft.target) > 500
-    )
-      throw new Error("Enter a whole number of badges between 1 and 500.");
-    if (
-      ![Number(draft.min), Number(draft.max)].every(Number.isFinite) ||
-      Number(draft.min) < 1.8 ||
-      Number(draft.max) > 10 ||
-      Number(draft.max) < Number(draft.min)
-    )
-      throw new Error("Choose a size range between 1.8 and 10 inches, with the minimum first.");
-    const layout = await designRequest<DesignLayout>({
+    const input = packingInput.safeParse({
       ...draft.files,
       confirmed: draft.confirmed,
       target: Number(draft.target),
@@ -198,6 +180,11 @@ export default function DesignWorkflow() {
       maxSizeIn: Number(draft.max),
       sheets: draft.sheets,
     });
+    if (!input.success)
+      throw new Error(
+        input.error.issues[0]?.message ?? "Check the quantity, sheets, and size range.",
+      );
+    const layout = await designRequest(input.data, designLayoutSchema);
     await checkpoint({ layout, phase: "ready" });
   }
   async function prepare() {
@@ -424,7 +411,7 @@ export default function DesignWorkflow() {
                   id="target"
                   type="number"
                   min="1"
-                  max="500"
+                  max={MAX_BADGE_COUNT}
                   value={draft.target}
                   onChange={(e) => change({ target: e.target.value, layout: undefined })}
                 />
@@ -439,9 +426,9 @@ export default function DesignWorkflow() {
                     <Input
                       id="size-min"
                       type="number"
-                      min="1.8"
-                      max="10"
-                      step="0.05"
+                      min={MIN_BADGE_SIZE_IN}
+                      max={MAX_DESIGN_SIZE_IN}
+                      step={BADGE_SIZE_STEP_IN}
                       value={draft.min}
                       onChange={(e) => change({ min: e.target.value, layout: undefined })}
                     />
@@ -450,9 +437,9 @@ export default function DesignWorkflow() {
                     <Input
                       id="size-max"
                       type="number"
-                      min="1.8"
-                      max="10"
-                      step="0.05"
+                      min={MIN_BADGE_SIZE_IN}
+                      max={MAX_DESIGN_SIZE_IN}
+                      step={BADGE_SIZE_STEP_IN}
                       value={draft.max}
                       onChange={(e) => change({ max: e.target.value, layout: undefined })}
                     />

@@ -10,6 +10,20 @@ export interface SurfaceOptions {
   scratches?: HTMLImageElement;
 }
 
+export function acrylicProperties(material: AcrylicMaterial, thicknessMm: number) {
+  return {
+    ...MATERIAL_TYPE_CONFIGS[material.type].physical,
+    color: material.color,
+    transparent: false,
+    opacity: 1,
+    thickness: thicknessMm,
+    ior: 1.49,
+    envMapIntensity: 0.8,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  };
+}
+
 function tiledPixels(
   image: HTMLImageElement | undefined,
   width: number,
@@ -29,6 +43,7 @@ function tiledPixels(
 export function badgeSurface(
   mask: HTMLCanvasElement,
   material: AcrylicMaterial,
+  thicknessMm: number,
   widthMm: number,
   heightMm: number,
   options: SurfaceOptions = {},
@@ -107,7 +122,7 @@ export function badgeSurface(
   const clearcoatMap = texture(coating);
   const normalMap = texture(normals);
   const face = new THREE.MeshPhysicalMaterial({
-    ...base,
+    ...acrylicProperties(material, thicknessMm),
     color: "white",
     map,
     roughness: 1,
@@ -117,14 +132,7 @@ export function badgeSurface(
     clearcoatNormalMap: normalMap,
     clearcoatRoughness: 1,
     clearcoatRoughnessMap: roughnessMap,
-    transparent: false,
-    opacity: 1,
-    metalness: 0,
-    ior: 1.49,
     transmissionMap: roughnessMap,
-    thickness: 3.175,
-    envMapIntensity: 0.8,
-    side: THREE.DoubleSide,
   });
   return {
     material: face,

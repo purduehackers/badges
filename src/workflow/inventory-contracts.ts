@@ -1,17 +1,16 @@
 import { z } from "zod";
 
-import { MAX_CUTTING_SHEETS, personSchema } from "./contracts.ts";
+import { MAX_CUTTING_SHEETS, personSchema, sheetSizeSchema } from "./contracts.ts";
 import { materialLabel, stockMaterial, thicknessLabel } from "../lib/materials.ts";
 
 export const materialIdSchema = z.string().refine((id) => stockMaterial(id) !== undefined, {
   message: "Choose a material from the suggestions.",
 });
 const quantity = z.int().min(0).max(10_000);
-const dimension = z.number().min(0.25).max(120).multipleOf(0.001);
 export const stockSpecSchema = z.strictObject({
   materialId: materialIdSchema,
-  widthIn: dimension,
-  heightIn: dimension,
+  widthIn: sheetSizeSchema.shape.widthIn.multipleOf(0.001),
+  heightIn: sheetSizeSchema.shape.heightIn.multipleOf(0.001),
   thicknessMm: z.number().min(0.1).max(100).multipleOf(0.001),
 });
 export const stockItemSchema = stockSpecSchema.extend({
@@ -79,4 +78,21 @@ export type StockChange = z.output<typeof stockChangeSchema>;
 
 export function stockLabel(item: StockSpec): string {
   return `${materialLabel(item.materialId)} · ${item.widthIn} × ${item.heightIn} in · ${thicknessLabel(item.thicknessMm)}`;
+}
+
+/** Match colors and dimensions regardless of sheet orientation or multiplication separator. */
+export function matchesStock(text: string, query: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replaceAll(
+        /(\d+(?:\.\d+)?)\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)/gu,
+        (_match, a, b) => `${Math.min(Number(a), Number(b))}x${Math.max(Number(a), Number(b))}`,
+      )
+      .replaceAll(/[^a-z0-9.]+/gu, " ")
+      .trim();
+  const haystack = normalize(text);
+  return normalize(query)
+    .split(/\s+/u)
+    .every((term) => haystack.includes(term));
 }

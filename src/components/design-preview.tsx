@@ -3,6 +3,7 @@
 import Image from "next/image";
 import paperTexture from "@/renderer/assets/paper-height.png";
 import { useEffect, useRef, useState } from "react";
+import { DEFAULT_BADGE_SIZE_IN } from "@/workflow/policy";
 import { getMaterial } from "@/lib/materials";
 import type { ProductionFile } from "@/lib/ruby-batch";
 
@@ -45,7 +46,7 @@ export default function DesignPreview({
           svg: file.previewSvg ?? file.svg,
           material: getMaterial(file.materialId),
           thicknessMm: file.thicknessMm,
-          sizeIn: file.sizeIn ?? 2.2,
+          sizeIn: file.sizeIn ?? DEFAULT_BADGE_SIZE_IN,
         });
         if (cancelled) cleanup();
         else {
@@ -54,29 +55,12 @@ export default function DesignPreview({
           onStatus?.(file.kind, true);
         }
       } else {
-        const { createStamp } = await import("@/renderer/stamp");
-        let svg = file.svg;
-        if (file.mirrored) {
-          const document = new DOMParser().parseFromString(svg, "image/svg+xml");
-          const root = document.documentElement;
-          const [x, , width] = (root.getAttribute("viewBox") ?? "")
-            .trim()
-            .split(/[\s,]+/)
-            .map(Number);
-          if (!Number.isFinite(width))
-            throw new Error("The stamp needs a viewBox to show its impression.");
-          const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          group.setAttribute("transform", `translate(${x * 2 + width} 0) scale(-1 1)`);
-          while (root.firstChild) group.append(root.firstChild);
-          root.append(group);
-          svg = new XMLSerializer().serializeToString(root);
-        }
-        const paper = document.createElement("img");
-        paper.src = paperTexture.src;
-        await paper.decode();
-        if (cancelled) return;
-        const stamp = await createStamp(svg, paper);
-        const { canvas } = stamp.render();
+        const { renderStamp } = await import("@/renderer/stamp");
+        const canvas = await renderStamp(
+          file.previewSvg ?? file.svg,
+          paperTexture.src,
+          !file.previewSvg && file.mirrored,
+        );
         canvas.setAttribute("aria-label", "Simulated stamp impression on paper");
         if (cancelled) return;
         target.append(canvas);

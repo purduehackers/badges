@@ -1,4 +1,6 @@
 import { canvas2d, readArtwork } from "./artwork.ts";
+import { mirrorSvg } from "../lib/svg-document.ts";
+import { STAMP_SIZE_IN } from "../workflow/policy.ts";
 
 export interface StampOptions {
   ink: number;
@@ -45,7 +47,7 @@ export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
   const minY = Math.min(...points.map((point) => point.y));
   const cutWidth = Math.max(...points.map((point) => point.x)) - minX;
   const cutHeight = Math.max(...points.map((point) => point.y)) - minY;
-  const mmPerUnit = 38.1 / Math.min(cutWidth, cutHeight);
+  const mmPerUnit = (STAMP_SIZE_IN * 25.4) / Math.min(cutWidth, cutHeight);
   const widthMm = cutWidth * mmPerUnit,
     heightMm = cutHeight * mmPerUnit;
   const pixelsPerMm = 800 / (Math.max(widthMm, heightMm) + 12);
@@ -136,4 +138,17 @@ export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
     return { canvas: result.canvas, coverage: deposited / retained.length };
   }
   return { render, widthMm, heightMm };
+}
+
+export async function renderStamp(
+  svg: string,
+  paperUrl: string,
+  mirrored = false,
+  settings = DEFAULT_STAMP,
+) {
+  const paper = new Image();
+  paper.src = paperUrl;
+  await paper.decode();
+  const stamp = await createStamp(mirrored ? mirrorSvg(svg) : svg, paper);
+  return stamp.render(settings).canvas;
 }

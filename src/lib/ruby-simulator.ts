@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { criterionSchema } from "../workflow/contracts";
 import { RUBY_PROFILE_NAMES, type RubyConnection } from "./ruby-production";
 import { fitsBed, overlaps, svgPhysicalSize, type BedPoint } from "./ruby-bed";
 
@@ -16,7 +17,7 @@ const simulatorSchema = z.object({
       availableAt: z.number(),
       duration: z.number(),
       elapsed: z.number(),
-      kind: z.enum(["badge", "stamp"]),
+      kind: criterionSchema,
       size: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
       origin: z.object({ x: z.number(), y: z.number() }).optional(),
       status: z.enum(["Ready", "Running", "Paused", "Finished", "NeedsAlignment"]),

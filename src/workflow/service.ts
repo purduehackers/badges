@@ -2,21 +2,19 @@ import { packingProposalSchema } from "./packing-proposal.ts";
 import { randomUUID } from "node:crypto";
 
 import { DISCORD_GUILD_ID } from "../server/platform.ts";
-import { messagePayloadSchema } from "../server/platform.ts";
-import type { MessagePayload, Principal } from "../server/platform.ts";
+import { messagePayloadSchema } from "./api.ts";
+import type { MessagePayload, Principal } from "./api.ts";
 
+import { includesMaterial, reviewMaterials, RUBRIC_VERSION } from "./contracts.ts";
 import {
-  BADGES_CHANNEL_ID,
   contextHash,
   designHash,
-  includesMaterial,
   invalidate,
   ready,
   remainingCriteria,
   reviewable,
-  reviewMaterials,
-  RUBRIC_VERSION,
-} from "./contracts.ts";
+} from "./review.ts";
+import { BADGES_CHANNEL_ID } from "./wire.ts";
 import type { Asset, BadgeEvent, JobKind, Person, Review, StoredReview } from "./contracts.ts";
 import { badgeIndex, inferEvent, singleRole } from "./intake.ts";
 import type { createBadgeInventory } from "./inventory.ts";
@@ -25,7 +23,7 @@ import { expandSheets, resolveSheets } from "./sheets.ts";
 import { reviewStep } from "./presentation.ts";
 import { StaleReview } from "./store.ts";
 import type { BadgeStore } from "./store.ts";
-import { parseSvg } from "./svg.ts";
+import { parseSvg } from "../lib/svg-document.ts";
 import type { Action } from "./wire.ts";
 export type { Action } from "./wire.ts";
 
@@ -129,7 +127,7 @@ class BadgeService {
         uploads,
         sourceMessageId: messageId,
         ...(event ? { event } : {}),
-        settings: productionSettings(event),
+        settings: productionSettings(),
       },
       payload.content,
       previous?.review,
@@ -480,7 +478,7 @@ async function configure(review: Review, action: Action, cms: Cms): Promise<Revi
   const id = action.kind === "event" ? action.id : review.event?.id;
   const event = id ? await cms.event(id) : undefined;
   const { fittedSizeIn: _fitted, ...reset } = next;
-  return { ...reset, ...(event ? { event } : {}), settings: productionSettings(event) };
+  return { ...reset, ...(event ? { event } : {}), settings: productionSettings() };
 }
 export class CmsEventChanged extends Error {
   constructor() {
@@ -491,7 +489,7 @@ export async function assertCurrentEvent(review: Review, cms: Cms): Promise<void
   if (
     !review.event ||
     JSON.stringify(await cms.event(review.event.id)) !== JSON.stringify(review.event) ||
-    JSON.stringify(productionSettings(review.event)) !== JSON.stringify(review.settings)
+    JSON.stringify(productionSettings()) !== JSON.stringify(review.settings)
   )
     throw new CmsEventChanged();
 }

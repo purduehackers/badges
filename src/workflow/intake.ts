@@ -1,4 +1,4 @@
-import type { MessagePayload } from "../server/platform.ts";
+import type { MessagePayload } from "./api.ts";
 
 import type { BadgeEvent, Criterion, Review } from "./contracts.ts";
 import { fixRole, reviewStep } from "./presentation.ts";

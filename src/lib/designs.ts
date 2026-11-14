@@ -1,84 +1,92 @@
 import { z } from "zod";
+import {
+  badgeMaterialSchema,
+  badgeSizeSchema,
+  checkSchema,
+  criterionSchema,
+  eventSchema,
+  sheetBatchSchema,
+  targetCountSchema,
+} from "../workflow/contracts.ts";
+import { stockItemSchema } from "../workflow/inventory-contracts.ts";
+import { readResponse } from "./http.ts";
 
-export const roles = ["badge", "stamp"] as const;
-export type DesignRole = (typeof roles)[number];
 const upload = z.object({ name: z.string().min(1).max(256), svg: z.string().min(1) });
 export const designInput = z.object({ badge: upload, stamp: upload });
-export const sheetInput = z.object({
-  widthIn: z.number().min(0.25).max(40),
-  heightIn: z.number().min(0.25).max(40),
-  quantity: z.int().min(1).max(10),
-  material: z.object({ materialId: z.string(), thicknessMm: z.number().min(0.1).max(20) }),
-});
+export const sheetInput = sheetBatchSchema.element.required({ material: true });
 export const packingInput = designInput
   .extend({
     confirmed: z.literal(true),
-    target: z.int().min(1).max(500),
-    minSizeIn: z.number().min(1.8).max(10),
-    maxSizeIn: z.number().min(1.8).max(10),
-    sheets: z.array(sheetInput).min(1).max(10),
+    target: targetCountSchema,
+    minSizeIn: badgeSizeSchema,
+    maxSizeIn: badgeSizeSchema,
+    sheets: sheetBatchSchema.pipe(z.array(sheetInput)),
   })
   .refine(
     (value) => value.minSizeIn <= value.maxSizeIn,
     "Minimum size must not exceed maximum size.",
-  )
-  .refine(
-    (value) => value.sheets.reduce((sum, sheet) => sum + sheet.quantity, 0) <= 10,
-    "Choose up to 10 sheets.",
   );
 export type DesignUpload = z.infer<typeof upload>;
 export type DesignPair = z.infer<typeof designInput>;
 export type DesignSheet = z.infer<typeof sheetInput>;
-export interface CheckedDesign {
-  name: string;
-  svg: string;
-  preview: string;
-  passed: boolean;
-  checks: { id: string; label: string; status: "pass" | "fail" | "unknown"; guidance: string }[];
-}
-export interface DesignChecks {
-  badge: CheckedDesign;
-  stamp: CheckedDesign;
-}
-export interface DesignLayout {
-  count: number;
-  widthIn: number;
-  heightIn: number;
-  sizeIn: number;
-  preview: string;
-  shortfall?: { count: number; sizeIn: number };
-  sheets: { widthIn: number; heightIn: number; count: number; materialId: string }[];
-  files: {
-    name: string;
-    svg: string;
-    kind: DesignRole;
-    materialId?: string;
-    thicknessMm: number;
-    previewSvg: string;
-  }[];
-}
-export interface DesignCatalog {
-  events: { id: string; version: string; date: string; name: string }[];
-  stock: {
-    id: string;
-    materialId: string;
-    widthIn: number;
-    heightIn: number;
-    thicknessMm: number;
-    quantity: number;
-    reserved: number;
-  }[];
-  notices: string[];
-}
+const checkedDesignSchema = z.object({
+  name: upload.shape.name,
+  svg: z.string(),
+  preview: z.string(),
+  passed: z.boolean(),
+  checks: z.array(
+    checkSchema
+      .pick({ id: true, status: true })
+      .extend({ label: z.string(), guidance: z.string() }),
+  ),
+});
+export const designChecksSchema = z.object({
+  badge: checkedDesignSchema,
+  stamp: checkedDesignSchema,
+});
+export type CheckedDesign = z.infer<typeof checkedDesignSchema>;
+export type DesignChecks = z.infer<typeof designChecksSchema>;
+export const designLayoutSchema = z.object({
+  count: targetCountSchema,
+  widthIn: z.number().positive(),
+  heightIn: z.number().positive(),
+  sizeIn: badgeSizeSchema,
+  preview: z.string(),
+  shortfall: z.object({ count: targetCountSchema, sizeIn: badgeSizeSchema }).optional(),
+  sheets: z.array(
+    sheetInput
+      .pick({ widthIn: true, heightIn: true })
+      .extend({ count: targetCountSchema, materialId: z.string() }),
+  ),
+  files: z.array(
+    upload.extend({
+      kind: criterionSchema,
+      materialId: z.string().optional(),
+      thicknessMm: badgeMaterialSchema.shape.thicknessMm,
+      previewSvg: z.string(),
+    }),
+  ),
+});
+export type DesignLayout = z.infer<typeof designLayoutSchema>;
+export const designCatalogSchema = z.object({
+  events: z.array(eventSchema),
+  stock: z.array(stockItemSchema),
+  notices: z.array(z.string()),
+});
+export type DesignCatalog = z.infer<typeof designCatalogSchema>;
 
-export async function designRequest<T>(body: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch("/api/designs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error ?? "Could not prepare your designs. Try again.");
-  return result;
+export async function designRequest<T>(
+  body: unknown,
+  schema: z.ZodType<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return readResponse(
+    await fetch("/api/designs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    schema,
+  );
 }

@@ -6,7 +6,7 @@ import { Input } from "@/components/ph/input";
 import Image from "next/image";
 import { useState } from "react";
 import { ACRYLIC_MATERIALS, materialLabel } from "@/lib/materials";
-import { type ProductionFile, type Release } from "@/lib/ruby-batch";
+import { materialSummary, type ProductionFile, type Release } from "@/lib/ruby-batch";
 import { FileThumbnail } from "@/components/design-preview";
 
 export default function RubySelection({
@@ -170,7 +170,7 @@ export default function RubySelection({
                         </select>
                       </label>
                     ) : (
-                      <span className="ruby-help">Stamp rubber · 2.3 mm</span>
+                      <span className="ruby-help">{materialSummary(file)}</span>
                     )}
                   </div>
                 </div>

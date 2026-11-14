@@ -2,23 +2,30 @@ import { ZodError } from "zod";
 import { designInput, packingInput, type CheckedDesign } from "@/lib/designs";
 import { stockMaterial } from "@/lib/materials";
 import { inspectSvg, renderSvg } from "@/workflow/svg";
-import { physicalSvg } from "@/workflow/manufacturing";
+import { prepareDesign } from "@/workflow/manufacturing";
 import { findingGuidance, verificationLabels, failureGuidance } from "@/workflow/presentation";
 import { pack } from "@/workflow/packing";
-import { productionSettings } from "@/workflow/policy";
+import {
+  productionSettings,
+  DEFAULT_BADGE_SIZE_IN,
+  STAMP_SIZE_IN,
+  STAMP_THICKNESS_MM,
+} from "@/workflow/policy";
 import { expandSheets, sheetFileNames } from "@/workflow/sheets";
 import { createBadgeInventory } from "@/workflow/inventory";
 import { getDb } from "@/server/db";
 import { cms } from "@/server/cms";
-import { hash } from "@/workflow/contracts";
-import type { DesignRole, DesignUpload } from "@/lib/designs";
+import { hash } from "@/workflow/review";
+
+import type { DesignUpload } from "@/lib/designs";
+import type { Criterion } from "@/workflow/contracts";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 const image = (bytes: Uint8Array) =>
   `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
 
-function check(file: DesignUpload, role: DesignRole): CheckedDesign {
+function check(file: DesignUpload, role: Criterion): CheckedDesign {
   try {
     const result = inspectSvg(file.svg, role);
     const labels = verificationLabels(role);
@@ -99,13 +106,13 @@ export async function POST(request: Request) {
         return id;
       },
     };
-    const source = physicalSvg(badge.svg, "badge", 2.2, false);
+    const source = badge.svg;
     const result = await pack(
       source,
       inspectSvg(source, "badge").cuts,
       {
         ...productionSettings(),
-        badgeSizeIn: Math.max(input.minSizeIn, Math.min(2.2, input.maxSizeIn)),
+        badgeSizeIn: Math.max(input.minSizeIn, Math.min(DEFAULT_BADGE_SIZE_IN, input.maxSizeIn)),
       },
       store,
       expandSheets(input.sheets),
@@ -113,7 +120,8 @@ export async function POST(request: Request) {
     );
     const layout = result.layouts[0]!;
     const names = sheetFileNames(layout.sheetSizes);
-    const previewSvg = physicalSvg(badge.svg, "badge", layout.sizeIn, false);
+    const { previewSvg } = prepareDesign(badge.svg, "badge", layout.sizeIn);
+    const stampFile = prepareDesign(stamp.svg, "stamp", STAMP_SIZE_IN);
     const files = layout.sheets.map((id, index) => ({
       name: names[index]!,
       svg: Buffer.from(assets.get(id)!).toString("utf8"),
@@ -130,7 +138,8 @@ export async function POST(request: Request) {
       preview: image(assets.get(layout.preview)!),
       shortfall: result.shortfall,
       sheets: layout.sheetSizes.map((sheet, index) => ({
-        ...sheet,
+        widthIn: sheet.widthIn,
+        heightIn: sheet.heightIn,
         materialId: sheet.material!.materialId,
         count: layout.placements.filter((pose) => pose.sheet === index).length,
       })),
@@ -138,10 +147,10 @@ export async function POST(request: Request) {
         ...files,
         {
           name: "stamp.svg",
-          svg: physicalSvg(stamp.svg, "stamp", 1.5, true),
+          svg: stampFile.svg,
           kind: "stamp",
-          thicknessMm: 2.3,
-          previewSvg: physicalSvg(stamp.svg, "stamp", 1.5, false),
+          thicknessMm: STAMP_THICKNESS_MM,
+          previewSvg: stampFile.previewSvg,
         },
       ],
     });

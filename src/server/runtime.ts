@@ -1,5 +1,7 @@
+import { createBadgeService } from "../workflow/service.ts";
+import { createBadgeStore } from "../workflow/store.ts";
+import { createWorker } from "../workflow/worker.ts";
 import { renderDesigns } from "../renderer/render.ts";
-import { createBadgeService, createBadgeStore, createWorker } from "../workflow/index.ts";
 import { createBadgeInventory } from "../workflow/inventory.ts";
 import { stockMaterial } from "../lib/materials.ts";
 import { getDb } from "./db/index.ts";

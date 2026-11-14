@@ -352,3 +352,9 @@ input[type="file"]::file-selector-button {
   overflow-wrap: anywhere;
   text-align: left;
 }
+
+.viewer-stage .ruby-design-preview,
+.viewer-stage .ruby-design-canvas {
+  width: 100%;
+  height: 100%;
+}

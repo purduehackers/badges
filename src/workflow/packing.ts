@@ -1,9 +1,10 @@
 import { Resvg } from "@resvg/resvg-js";
 import { join } from "node:path";
-import { XMLSerializer } from "@xmldom/xmldom";
 import type { Path } from "clipper-lib";
 
-import { hash, MAX_BADGE_COUNT } from "./contracts.ts";
+import { MAX_BADGE_COUNT } from "./contracts.ts";
+import { hash } from "./review.ts";
+
 import type { CuttingSheet, Layout, Settings, SheetSize } from "./contracts.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { sheetLabel } from "./sheets.ts";
@@ -25,9 +26,14 @@ import {
 } from "./geometry.ts";
 import type { Point } from "./geometry.ts";
 import { physicalDimensions } from "./manufacturing.ts";
-import { BADGE_SIZE_STEP_IN, MIN_BADGE_SIZE_IN, MAX_BADGE_SIZE_IN } from "./policy.ts";
+import {
+  BADGE_SIZE_STEP_IN,
+  DEFAULT_BADGE_SIZE_IN,
+  MIN_BADGE_SIZE_IN,
+  MAX_BADGE_SIZE_IN,
+} from "./policy.ts";
 import type { BadgeStore } from "./store.ts";
-import { parseSvg } from "./svg.ts";
+import { svgGroup } from "../lib/svg-document.ts";
 
 type Placement = Layout["placements"][number];
 interface Shape {
@@ -210,17 +216,7 @@ function sheetSvg(
   size: SheetSize,
 ): string {
   const dimensions = { width: size.widthIn * 25.4, height: size.heightIn * 25.4 };
-  const { root } = parseSvg(source);
-  // A group preserves root presentation attributes, without a viewport that could crop the art.
-  const document = root.ownerDocument;
-  if (!document) throw new Error("Missing SVG document.");
-  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  for (const attribute of Array.from(root.attributes))
-    if (!["xmlns", "viewBox", "width", "height", "id"].includes(attribute.name))
-      group.setAttribute(attribute.name, attribute.value);
-  group.setAttribute("id", "badge-art");
-  for (const child of Array.from(root.childNodes)) group.appendChild(child.cloneNode(true));
-  const drawing = new XMLSerializer().serializeToString(group);
+  const drawing = svgGroup(source, "badge-art");
   const copies = placements
     .filter((p) => p.sheet === sheet)
     .map(
@@ -264,7 +260,8 @@ export async function pack(
   let candidate = search(settings.badgeSizeIn);
   if (target !== undefined && !options.fixedSize) {
     const minimum =
-      options.minSizeIn ?? (settings.badgeSizeIn > 2.2 ? settings.badgeSizeIn : MIN_BADGE_SIZE_IN);
+      options.minSizeIn ??
+      (settings.badgeSizeIn > DEFAULT_BADGE_SIZE_IN ? settings.badgeSizeIn : MIN_BADGE_SIZE_IN);
     const units = (size: number) => Math.round(size / BADGE_SIZE_STEP_IN);
     const size = (unit: number) => Number((unit * BADGE_SIZE_STEP_IN).toFixed(2));
     try {

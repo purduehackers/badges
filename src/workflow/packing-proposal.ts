@@ -1,13 +1,7 @@
 import { z } from "zod";
-import {
-  badgeSize,
-  contextHash,
-  layoutSchema,
-  remainingCriteria,
-  reviewable,
-  reviewMaterials,
-  sheetBatchSchema,
-} from "./contracts.ts";
+import { layoutSchema, reviewMaterials, sheetBatchSchema } from "./contracts.ts";
+import { badgeSize, contextHash, remainingCriteria, reviewable } from "./review.ts";
+
 import type { Review, SheetBatch } from "./contracts.ts";
 import { pack } from "./packing.ts";
 import { expandSheets, resolveSheets, sheetLabel } from "./sheets.ts";

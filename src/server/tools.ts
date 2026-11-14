@@ -1,11 +1,8 @@
 import { z } from "zod";
-import { badgeTools, badgeToolNameSchema, type BadgeToolName } from "../workflow/tools.ts";
-import {
-  badgeSize,
-  remainingCriteria,
-  staticPassed,
-  reviewMaterials,
-} from "../workflow/contracts.ts";
+import { badgeTools, type BadgeToolName } from "../workflow/tools.ts";
+import { reviewMaterials } from "../workflow/contracts.ts";
+import { badgeSize, remainingCriteria, staticPassed } from "../workflow/review.ts";
+
 import type { StoredReview } from "../workflow/contracts.ts";
 import { assertScope, assertControl, type Action, type Actor } from "../workflow/service.ts";
 import {
@@ -18,16 +15,12 @@ import { previewPacking } from "../workflow/packing-proposal.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { cms, attendance } from "./cms.ts";
 import { runtime } from "./runtime.ts";
-import { messagePayloadSchema, DISCORD_GUILD_ID } from "./platform.ts";
+import { DISCORD_GUILD_ID } from "./platform.ts";
+import { messagePayloadSchema, badgeEndpoints } from "../workflow/api.ts";
 import { viewerUrl } from "./viewer.ts";
 import { env } from "./env.ts";
 
-export const contextSchema = z.strictObject({
-  threadId: z.string(),
-  messageId: z.string(),
-  userId: z.string(),
-});
-type Context = z.output<typeof contextSchema>;
+type Context = z.output<typeof badgeEndpoints.status.request>;
 export async function contextFor(input: Context) {
   const { store } = runtime();
   const record = await store.inbox(input.messageId, input.threadId);
@@ -143,11 +136,7 @@ export async function reviewStatus(context: Context) {
   };
 }
 
-export const toolRequestSchema = contextSchema.extend({
-  name: badgeToolNameSchema,
-  input: z.unknown(),
-});
-export async function executeTool(request: z.output<typeof toolRequestSchema>) {
+export async function executeTool(request: z.output<typeof badgeEndpoints.tool.request>) {
   const { actor, stored } = await contextFor(request);
   if (!availableTools(stored, actor).includes(request.name))
     throw new Error("That action is not available at this step.");

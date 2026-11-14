@@ -10,7 +10,9 @@ import {
 import type { Db } from "../server/db/index.ts";
 import { and, eq, lte, sql } from "drizzle-orm";
 
-import { hash, jobKindSchema, reviewSchema } from "./contracts.ts";
+import { jobKindSchema, reviewSchema } from "./contracts.ts";
+import { hash } from "./review.ts";
+
 import type { JobKind, Review, StoredReview } from "./contracts.ts";
 
 export class StaleReview extends Error {

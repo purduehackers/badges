@@ -1,6 +1,6 @@
+import type { BadgeStore } from "../workflow/store.ts";
 import { join } from "node:path";
 
-import type { BadgeStore } from "../workflow/index.ts";
 import type { Asset, Review } from "../workflow/contracts.ts";
 import { fixRole, reviewStep } from "../workflow/presentation.ts";
 import { renderSvg } from "../workflow/svg.ts";

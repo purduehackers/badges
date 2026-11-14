@@ -3,7 +3,8 @@
 import { Button } from "@/components/ph/button";
 
 import { useState } from "react";
-import { collectRuby, downloadReport, redact, type RubyReport } from "@/lib/ruby-diagnostics";
+import { collectRuby, downloadReport, type RubyReport } from "@/lib/ruby-diagnostics";
+import { redact } from "@/lib/ruby-transport";
 import type { RubyConnection, RubyReceipt } from "@/lib/ruby-production";
 
 export default function RubyDiagnostics({

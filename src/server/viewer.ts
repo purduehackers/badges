@@ -1,8 +1,9 @@
+import type { BadgeStore } from "../workflow/store.ts";
+import type { Review } from "../workflow/contracts.ts";
 import { createHmac } from "node:crypto";
 
 import { ingressSecret } from "./env.ts";
 import { viewerPage } from "../renderer/render.ts";
-import type { BadgeStore, Review } from "../workflow/index.ts";
 import { stockMaterial } from "../lib/materials.ts";
 import { bearerMatches } from "./platform.ts";
 import { z } from "zod";

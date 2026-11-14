@@ -11,14 +11,22 @@ import {
   DEFAULT_MATERIAL_ID,
 } from "@/lib/materials";
 import {
-  roles,
   type DesignCatalog,
   type DesignChecks,
   type DesignPair,
-  type DesignRole,
   type DesignSheet,
   type DesignUpload,
 } from "@/lib/designs";
+import { matchesStock, stockLabel } from "@/workflow/inventory-contracts";
+import {
+  criteria,
+  type Criterion,
+  MAX_CUTTING_SHEETS,
+  sheetSizeSchema,
+} from "@/workflow/contracts";
+import { sheetKey } from "@/workflow/sheets";
+import { ACRYLIC_THICKNESS_MM } from "@/workflow/policy";
+import { sheetInput } from "@/lib/designs";
 import { useState } from "react";
 
 export function DesignFiles({
@@ -30,13 +38,13 @@ export function DesignFiles({
   files: Partial<DesignPair>;
   checks?: DesignChecks;
   busy: boolean;
-  onUpload(role: DesignRole, file: DesignUpload): void;
+  onUpload(role: Criterion, file: DesignUpload): void;
 }) {
   const [error, setError] = useState("");
   return (
     <>
       <div className="design-pair">
-        {roles.map((role) => (
+        {criteria.map((role) => (
           <section className="design-upload" key={role}>
             <label className="ph-subheadline" htmlFor={`upload-${role}`}>
               {role === "badge" ? "Badge SVG" : "Stamp SVG"}
@@ -89,7 +97,7 @@ export function DesignFiles({
 export function CheckResults({ checks }: { checks: DesignChecks }) {
   return (
     <div className="design-pair">
-      {roles.map((role) => (
+      {criteria.map((role) => (
         <section key={role} className="qa-results">
           <h2>{role === "badge" ? "Badge" : "Stamp"} file checks</h2>
           <ul>
@@ -138,18 +146,10 @@ export function SheetPicker({
           />
           <ul className="stock-list">
             {catalog.stock
-              .filter((item) =>
-                `${materialLabel(item.materialId)} ${item.widthIn}x${item.heightIn}`
-                  .toLowerCase()
-                  .includes(search.toLowerCase()),
-              )
+              .filter((item) => matchesStock(stockLabel(item), search))
               .map((item) => {
                 const selected = sheets.find(
-                  (s) =>
-                    s.material.materialId === item.materialId &&
-                    s.widthIn === item.widthIn &&
-                    s.heightIn === item.heightIn &&
-                    s.material.thicknessMm === item.thicknessMm,
+                  (s) => sheetKey(s) === sheetKey({ ...item, material: item }),
                 );
                 return (
                   <li key={item.id}>
@@ -163,7 +163,7 @@ export function SheetPicker({
                       id={`stock-${item.id}`}
                       type="number"
                       min={0}
-                      max={Math.min(10, item.quantity - item.reserved)}
+                      max={Math.min(MAX_CUTTING_SHEETS, Math.max(0, item.quantity - item.reserved))}
                       value={selected?.quantity ?? 0}
                       disabled={busy}
                       onChange={(e) => {
@@ -221,6 +221,12 @@ function ManualSheet({ busy, onAdd }: { busy: boolean; onAdd(sheet: DesignSheet)
   const [width, setWidth] = useState("12"),
     [height, setHeight] = useState("12"),
     [quantity, setQuantity] = useState("1");
+  const parsed = sheetInput.safeParse({
+    widthIn: Number(width),
+    heightIn: Number(height),
+    quantity: Number(quantity),
+    material: { materialId, thicknessMm: ACRYLIC_THICKNESS_MM },
+  });
   return (
     <div className="manual-sheet">
       <Field label="Acrylic" htmlFor="sheet-material">
@@ -241,8 +247,8 @@ function ManualSheet({ busy, onAdd }: { busy: boolean; onAdd(sheet: DesignSheet)
           <Input
             id="sheet-width"
             type="number"
-            min="0.25"
-            max="40"
+            min={sheetSizeSchema.shape.widthIn.minValue ?? undefined}
+            max={sheetSizeSchema.shape.widthIn.maxValue ?? undefined}
             step="0.01"
             value={width}
             onChange={(e) => setWidth(e.target.value)}
@@ -252,8 +258,8 @@ function ManualSheet({ busy, onAdd }: { busy: boolean; onAdd(sheet: DesignSheet)
           <Input
             id="sheet-height"
             type="number"
-            min="0.25"
-            max="40"
+            min={sheetSizeSchema.shape.widthIn.minValue ?? undefined}
+            max={sheetSizeSchema.shape.widthIn.maxValue ?? undefined}
             step="0.01"
             value={height}
             onChange={(e) => setHeight(e.target.value)}
@@ -264,7 +270,7 @@ function ManualSheet({ busy, onAdd }: { busy: boolean; onAdd(sheet: DesignSheet)
             id="sheet-quantity"
             type="number"
             min="1"
-            max="10"
+            max={MAX_CUTTING_SHEETS}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
           />
@@ -272,15 +278,8 @@ function ManualSheet({ busy, onAdd }: { busy: boolean; onAdd(sheet: DesignSheet)
       </div>
       <Button
         variant="outline"
-        disabled={busy || ![width, height, quantity].every((v) => Number(v) > 0)}
-        onClick={() =>
-          onAdd({
-            widthIn: Number(width),
-            heightIn: Number(height),
-            quantity: Number(quantity),
-            material: { materialId, thicknessMm: 3.175 },
-          })
-        }
+        disabled={busy || !parsed.success}
+        onClick={() => parsed.success && onAdd(parsed.data)}
       >
         Add sheets
       </Button>

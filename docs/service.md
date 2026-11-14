@@ -21,6 +21,7 @@ Run these commands from the repository root. The `postinstall` script builds the
 | `bun run start:service` | Serve the built badge API, default port `30588`   |
 | `bun run typecheck`     | Check TypeScript                                  |
 | `bun run lint`          | Run lint with warnings denied                     |
+| `bun test`              | Check shared API, SVG, and manufacturing behavior |
 | `bunx oxfmt --check .`  | Check formatting                                  |
 
 Vercel runs the Next.js routes on Bun. The standalone Bun server is also available for local development. Both entry points use the same request handler. Linux rendering uses bundled Chromium; macOS needs an installed Chromium executable. Wack Hacker calls `/badges/work` after an interaction and once per minute to recover unfinished jobs.
@@ -70,3 +71,5 @@ Every `POST /badges/*` endpoint requires the shared bearer secret. `GET /badges/
 | `work`, `ack`        | Bot: process a job, deliver the current card, and record its receipt |
 
 Wack Hacker imports the client, contracts, presentation helpers, and tool schemas from this repository at a pinned Git commit. It does not import the renderer, database, or worker. The package install builds those client exports because Eve’s Node.js loader cannot execute TypeScript dependencies from `node_modules`.
+
+`src/workflow/api.ts` defines the service request and response schemas. `createBadgeClient().post()` derives its request and return types from those schemas and validates the wire response once. Bot and agent callers use that result directly. Change a contract here, rebuild the package, and update both Wack Hacker dependency pins together.

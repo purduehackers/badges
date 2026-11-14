@@ -1,26 +1,37 @@
 "use client";
 import dynamic from "next/dynamic";
+import { ACRYLIC_THICKNESS_MM } from "@/workflow/policy";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  ACRYLIC_MATERIALS,
-  getMaterial,
-  DEFAULT_MATERIAL_ID,
-  materialLabel,
-} from "@/lib/materials";
+import { ACRYLIC_MATERIALS, DEFAULT_MATERIAL_ID, materialLabel } from "@/lib/materials";
 import { Field } from "./ph/field";
-const Scene = dynamic(() => import("./badge-scene").then((m) => m.BadgeScene), { ssr: false });
+const DesignPreview = dynamic(() => import("./design-preview"), { ssr: false });
 export default function BadgeViewer() {
   const params = useSearchParams();
   const [file, setFile] = useState<File>();
-  const [upload, setUpload] = useState("");
+  const [svg, setSvg] = useState("");
+  const [error, setError] = useState("");
+  const url = params.get("badge") || "/badge.svg";
   const [materialId, setMaterial] = useState(DEFAULT_MATERIAL_ID);
   useEffect(() => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setUpload(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const controller = new AbortController();
+    setError("");
+    setSvg("");
+    void (async () => {
+      if (file) return file.text();
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error("Could not load the badge SVG.");
+      return response.text();
+    })()
+      .then((value) => {
+        if (!controller.signal.aborted) setSvg(value);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "Could not load the badge.");
+      });
+    return () => controller.abort();
+  }, [file, url]);
   return (
     <main className="viewer-page">
       <header className="page-heading">
@@ -51,10 +62,19 @@ export default function BadgeViewer() {
         </Field>
       </div>
       <div className="viewer-stage">
-        <Scene
-          svgUrl={upload || params.get("badge") || "/badge.svg"}
-          material={getMaterial(materialId)}
-        />
+        {svg && (
+          <DesignPreview
+            file={{
+              svg,
+              kind: "badge",
+              materialId,
+              thicknessMm: ACRYLIC_THICKNESS_MM,
+              mirrored: false,
+              file: { name: file?.name ?? "Badge" },
+            }}
+          />
+        )}
+        {error && <p role="alert">{error}</p>}
       </div>
     </main>
   );

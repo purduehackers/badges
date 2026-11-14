@@ -1,11 +1,8 @@
-import { createHash } from "node:crypto";
-
 import { z } from "zod";
+import { MIN_BADGE_SIZE_IN, MAX_DESIGN_SIZE_IN, STAMP_SIZE_IN } from "./policy.ts";
 
-export const BADGES_CHANNEL_ID = z
-  .string()
-  .regex(/^\d{17,20}$/u)
-  .parse(process.env.BADGES_CHANNEL_ID || "1418162647005790342");
+export const badgeSizeSchema = z.number().min(MIN_BADGE_SIZE_IN).max(MAX_DESIGN_SIZE_IN);
+
 export const RUBRIC_VERSION = "2026-10-12.1";
 export const MAX_BADGE_COUNT = 500;
 export const MAX_CUTTING_SHEETS = 10;
@@ -49,8 +46,8 @@ export const eventSchema = z.strictObject({
 });
 export const settingsSchema = z.strictObject({
   material: z.string().trim().min(1).max(100),
-  badgeSizeIn: z.number().min(1.8).max(10),
-  stampSizeIn: z.literal(1.5),
+  badgeSizeIn: badgeSizeSchema,
+  stampSizeIn: z.literal(STAMP_SIZE_IN),
   gapMm: z.number().min(0).max(5),
 });
 export const criteria = ["badge", "stamp"] as const;
@@ -58,7 +55,7 @@ export const criterionSchema = z.enum(criteria);
 export const checkIds = ["supported", "palette", "vectors", "text", "fills", "cut"] as const;
 export const checkSchema = z.strictObject({
   id: z.enum(checkIds),
-  role: z.enum(["badge", "stamp"]),
+  role: criterionSchema,
   status: z.enum(["pass", "fail", "unknown"]),
   detail: z.string().max(3000),
   evidenceId: digestSchema,
@@ -152,7 +149,7 @@ export const reviewSchema = z.strictObject({
   stockReceipt: z.string().optional(),
   layoutAttempt: z.int().nonnegative().default(0),
   targetCount: targetCountSchema.optional(),
-  fittedSizeIn: z.number().min(1.8).max(10).optional(),
+  fittedSizeIn: badgeSizeSchema.optional(),
   quantityShortfall: z
     .strictObject({ count: targetCountSchema, sizeIn: z.number().positive() })
     .optional(),
@@ -220,129 +217,3 @@ export const jobKindSchema = z.enum([
   "render",
 ]);
 export type JobKind = z.output<typeof jobKindSchema>;
-
-export function hash(value: string | Uint8Array): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-export function contextHash(review: Review): string {
-  return hash(
-    JSON.stringify({
-      badge: review.badge?.hash,
-      stamp: review.stamp?.hash,
-      event: review.event,
-      settings: review.settings,
-      fittedSizeIn: review.fittedSizeIn,
-      targetCount: review.targetCount,
-      material: reviewMaterials(review)[0],
-      ...(reviewMaterials(review).length > 1 ? { materials: reviewMaterials(review) } : {}),
-      sheetBatch: review.sheetBatch,
-      layout: review.selectedLayout,
-      stockPlan: review.stockPlan,
-      ...(review.stockReceipt ? { stockReceipt: review.stockReceipt } : {}),
-      manufacturing: review.manufacturing,
-      rubric: review.rubric,
-    }),
-  );
-}
-
-/** Confirmations bind the design and configured size, independent of automatic layout fitting. */
-export function designHash(review: Review, role: Criterion): string {
-  return hash(
-    JSON.stringify({
-      asset: review[role]?.hash,
-      rubric: review.rubric,
-      ...(role === "badge"
-        ? {
-            event: review.event,
-            size: review.settings?.badgeSizeIn,
-            material: reviewMaterials(review)[0],
-            ...(reviewMaterials(review).length > 1 ? { materials: reviewMaterials(review) } : {}),
-          }
-        : { shortSide: review.settings?.stampSizeIn, impression: "unmirrored" }),
-    }),
-  );
-}
-
-export function staticPassed(review: Review): boolean {
-  return ["badge", "stamp"].every((role) =>
-    checkIds.every((id) =>
-      review.checks.some(
-        (check) =>
-          check.role === role &&
-          check.id === id &&
-          check.status === "pass" &&
-          check.evidenceId === (role === "badge" ? review.badge?.hash : review.stamp?.hash),
-      ),
-    ),
-  );
-}
-
-export function remainingCriteria(review: Review): Criterion[] {
-  return criteria.filter(
-    (criterion) =>
-      !review.decisions.some(
-        (decision) =>
-          decision.context === designHash(review, criterion) &&
-          decision.criterion === criterion &&
-          decision.verdict === "approve",
-      ),
-  );
-}
-
-export function reviewable(review: Review): boolean {
-  return (
-    review.rolesConfirmed &&
-    staticPassed(review) &&
-    review.event !== undefined &&
-    review.settings !== undefined &&
-    reviewMaterials(review).length > 0 &&
-    review.manufacturing !== undefined
-  );
-}
-
-export function ready(review: Review): boolean {
-  return (
-    reviewable(review) &&
-    remainingCriteria(review).length === 0 &&
-    Boolean(review.stockPlan?.every((sheet) => includesMaterial(reviewMaterials(review), sheet))) &&
-    review.layouts.some(
-      (layout) =>
-        layout.id === review.selectedLayout &&
-        layout.audited &&
-        layout.sizeIn === badgeSize(review) &&
-        review.targetCount !== undefined &&
-        layout.count >= review.targetCount,
-    )
-  );
-}
-
-export function badgeSize(review: Review): number | undefined {
-  return review.fittedSizeIn ?? review.settings?.badgeSizeIn;
-}
-
-export function invalidate(review: Review, role?: Criterion): Review {
-  const {
-    approval: _approval,
-    pr: _pr,
-    publication: _publication,
-    failure: _failure,
-    selectedLayout: _selectedLayout,
-    stockPlan: _stockPlan,
-    manufacturing: _manufacturing,
-    contextChanged: _contextChanged,
-    pendingRole: _pendingRole,
-    quantityShortfall: _quantityShortfall,
-    ...rest
-  } = review;
-  return {
-    ...rest,
-    generation: review.generation + 1,
-    checks: role ? review.checks.filter((check) => check.role !== role) : [],
-    previews: [],
-    layouts: [],
-    layoutAttempt: 0,
-    decisions: review.decisions,
-    ...(review.publication?.shortlink ? { previousShortlink: review.publication.shortlink } : {}),
-  };
-}

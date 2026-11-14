@@ -1,5 +1,6 @@
 "use client";
 
+import { useTask } from "@/lib/use-task";
 import { Button } from "@/components/ph/button";
 import { Input } from "@/components/ph/input";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -67,9 +68,7 @@ export default function RubyAdmin() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const lock = useRef(false);
+  const { busy, error, setError, run } = useTask();
 
   const saveReceipt = useCallback((receipt: RubyReceipt) => {
     const previous = readReceipts();
@@ -167,7 +166,7 @@ export default function RubyAdmin() {
       window.removeEventListener("storage", changed);
       activeClient.current = undefined;
     };
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     if (!client || (phase !== "produce" && !client.connection.simulated)) return;
@@ -233,20 +232,6 @@ export default function RubyAdmin() {
     };
   }, [client, phase, files, saveReceipt, refresh]);
 
-  async function run(label: string, action: () => Promise<void>) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(label);
-    setError("");
-    try {
-      await action();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      lock.current = false;
-      setBusy("");
-    }
-  }
   async function updateFiles(next: ProductionFile[]) {
     await savedBatch(next, client?.connection.simulated ? "simulated" : "current");
     setFiles(next);

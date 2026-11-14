@@ -1,5 +1,5 @@
 import { createBadgeScene } from "./scene.ts";
-import { createStamp } from "./stamp.ts";
+import { renderStamp } from "./stamp.ts";
 
 declare const STAMP_PAPER: string;
 
@@ -8,13 +8,10 @@ window.renderDesigns = async (input) => {
   try {
     await renderer.compileAsync(scene, camera);
     renderer.render(scene, camera);
-    const paper = new Image();
-    paper.src = STAMP_PAPER;
-    await paper.decode();
-    const stamp = await createStamp(input.stampSvg, paper);
+    const stamp = await renderStamp(input.stampSvg, STAMP_PAPER, false, input.stampSettings);
     return {
       badge: renderer.domElement.toDataURL("image/png"),
-      stamp: stamp.render(input.stampSettings).canvas.toDataURL("image/png"),
+      stamp: stamp.toDataURL("image/png"),
     };
   } finally {
     dispose();

@@ -1,9 +1,11 @@
+import { contextHash, designHash, hash } from "../workflow/review.ts";
+import type { BadgeStore } from "../workflow/store.ts";
+import type { Publisher } from "../workflow/worker.ts";
+import type { Review } from "../workflow/contracts.ts";
 import { createHmac } from "node:crypto";
 
 import { createAppAuth } from "@octokit/auth-app";
 import { env, ingressSecret } from "./env.ts";
-import { contextHash, designHash, hash } from "../workflow/index.ts";
-import type { BadgeStore, Publisher, Review } from "../workflow/index.ts";
 import { bearerMatches } from "./platform.ts";
 import { DISCORD_GUILD_ID } from "../server/platform.ts";
 import { Octokit } from "octokit";

@@ -1,6 +1,6 @@
+import { eventSchema, type BadgeEvent } from "../workflow/contracts.ts";
+import type { Cms } from "../workflow/service.ts";
 import { env } from "./env.ts";
-import { eventSchema } from "../workflow/index.ts";
-import type { BadgeEvent, Cms } from "../workflow/index.ts";
 import { z } from "zod";
 
 const rawEvent = z.object({

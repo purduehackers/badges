@@ -12,6 +12,7 @@ import {
   stockChangeSchema,
   stockItemSchema,
   stockLabel,
+  matchesStock,
   stockSelectionSchema,
 } from "./inventory-contracts.ts";
 import type {
@@ -307,7 +308,7 @@ class BadgeInventory {
       const records = await this.db.select().from(badgeStock).orderBy(asc(badgeStock.materialId));
       return {
         items: (await this.withReservations(records))
-          .filter((item) => stockLabel(item).toLowerCase().includes(action.query.toLowerCase()))
+          .filter((item) => matchesStock(stockLabel(item), action.query))
           .slice(0, 25),
       };
     }

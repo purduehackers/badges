@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { actionName, actionRequest, componentId } from "../workflow/wire.ts";
 import { actionable, reviewStep } from "../workflow/presentation.ts";
-import { inventoryRequestSchema } from "../workflow/inventory-contracts.ts";
+import { badgeEndpoints } from "../workflow/api.ts";
 import { assertScope } from "../workflow/service.ts";
 import { runtime } from "./runtime.ts";
 import { cms } from "./cms.ts";
 import { env, ingressSecret } from "./env.ts";
-import { bearerMatches, DISCORD_GUILD_ID, messageOf, messagePayloadSchema } from "./platform.ts";
+import { bearerMatches, DISCORD_GUILD_ID, messageOf } from "./platform.ts";
 import { identifiedPreview, previewFiles } from "./previews.ts";
 import { viewerUrl, viewBadge } from "./viewer.ts";
-import { contextSchema, executeTool, reviewStatus, toolRequestSchema } from "./tools.ts";
+import { executeTool, reviewStatus } from "./tools.ts";
 
 async function control(input: z.output<typeof actionRequest>, mutate: boolean) {
   const expected = componentId(input.id, input.version, actionName(input.action), ingressSecret());
@@ -86,12 +86,12 @@ export async function handleBadgeRequest(request: Request): Promise<Response> {
     const { store, service, inventory } = runtime();
     switch (path) {
       case "/badges/lookup": {
-        const { threadId } = z.object({ threadId: z.string() }).parse(input);
+        const { threadId } = badgeEndpoints.lookup.request.parse(input);
         return Response.json({ exists: Boolean(await store.forThread(threadId)) });
       }
       case "/badges/submit":
       case "/badges/continue": {
-        const payload = messagePayloadSchema.parse(input);
+        const payload = badgeEndpoints.submit.request.parse(input);
         const threadId = assertScope(payload);
         if (path.endsWith("continue")) {
           const saved = await store.forThread(threadId);
@@ -110,27 +110,21 @@ export async function handleBadgeRequest(request: Request): Promise<Response> {
         return Response.json({ handled });
       }
       case "/badges/status":
-        return Response.json(await reviewStatus(contextSchema.parse(input)));
+        return Response.json(await reviewStatus(badgeEndpoints.status.request.parse(input)));
       case "/badges/tool":
-        return Response.json(await executeTool(toolRequestSchema.parse(input)));
+        return Response.json(await executeTool(badgeEndpoints.tool.request.parse(input)));
       case "/badges/control":
         return control(actionRequest.parse(input), false);
       case "/badges/action":
         return control(actionRequest.parse(input), true);
       case "/badges/inventory":
-        return Response.json(await inventory.execute(inventoryRequestSchema.parse(input)));
+        return Response.json(
+          await inventory.execute(badgeEndpoints.inventory.request.parse(input)),
+        );
       case "/badges/work":
         return Response.json(await work(env.BADGES_PUBLIC_URL ?? request.url));
       case "/badges/ack": {
-        const data = z
-          .object({
-            id: z.string(),
-            lease: z.uuid(),
-            reviewId: z.uuid(),
-            messageId: z.string(),
-            version: z.int().nonnegative(),
-          })
-          .parse(input);
+        const data = badgeEndpoints.ack.request.parse(input);
         if (!data.id.startsWith(`${data.reviewId}:render:`))
           throw new Error("Invalid delivery receipt.");
         await store.card(data.reviewId, data.messageId, data.version);

@@ -1,17 +1,19 @@
 import { messageOf } from "../server/platform.ts";
 
+import { reviewMaterials } from "./contracts.ts";
 import {
   badgeSize,
   contextHash,
   ready,
   remainingCriteria,
   reviewable,
-  reviewMaterials,
   staticPassed,
-} from "./contracts.ts";
+} from "./review.ts";
+
 import type { BadgeMaterial, JobKind, Review } from "./contracts.ts";
 import type { createBadgeInventory } from "./inventory.ts";
-import { physicalDimensions, physicalSvg } from "./manufacturing.ts";
+import { prepareDesign } from "./manufacturing.ts";
+import { STAMP_SIZE_IN } from "./policy.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { pack } from "./packing.ts";
 import { expandSheets, resolveSheets } from "./sheets.ts";
@@ -261,32 +263,25 @@ async function prepare(
   const badgeSource = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const stampSource = (await store.asset(review.stamp.hash)).bytes.toString("utf8");
   const sizeIn = badgeSize(review) ?? review.settings.badgeSizeIn;
-  const badge = physicalSvg(badgeSource, "badge", sizeIn, false);
-  const impression = physicalSvg(stampSource, "stamp", 1.5, false);
-  const stamp = physicalSvg(stampSource, "stamp", 1.5, true);
-  const badgeDimensions = physicalDimensions(
-    inspectSvg(badgeSource, "badge").cuts,
-    "badge",
-    sizeIn,
-  );
-  const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cuts, "stamp", 1.5);
-  const previews = await renderer(badge, impression, material);
+  const badge = prepareDesign(badgeSource, "badge", sizeIn);
+  const stamp = prepareDesign(stampSource, "stamp", STAMP_SIZE_IN);
+  const previews = await renderer(badge.previewSvg, stamp.previewSvg, material);
   return {
     ...review,
     manufacturing: {
-      badge: await store.putAsset(Buffer.from(badge), "image/svg+xml"),
-      stamp: await store.putAsset(Buffer.from(stamp), "image/svg+xml"),
-      badgePreview: await store.putAsset(renderSvg(badge), "image/png"),
+      badge: await store.putAsset(Buffer.from(badge.svg), "image/svg+xml"),
+      stamp: await store.putAsset(Buffer.from(stamp.svg), "image/svg+xml"),
+      badgePreview: await store.putAsset(renderSvg(badge.svg), "image/png"),
       badge3d: {
         preview: await store.putAsset(previews.badge, "image/png"),
         material: materialDescription(material),
         ...material,
       },
       stampPreview: await store.putAsset(previews.stamp, "image/png"),
-      badgeWidthIn: badgeDimensions.widthIn,
-      badgeHeightIn: badgeDimensions.heightIn,
-      stampWidthIn: stampSize.widthIn,
-      stampHeightIn: stampSize.heightIn,
+      badgeWidthIn: badge.widthIn,
+      badgeHeightIn: badge.heightIn,
+      stampWidthIn: stamp.widthIn,
+      stampHeightIn: stamp.heightIn,
     },
   };
 }

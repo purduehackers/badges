@@ -8,6 +8,7 @@ import { stockMaterial } from "@/lib/materials";
 import type { ProductionFile } from "@/lib/ruby-batch";
 import { RUBY_BED, svgPhysicalSize, type BedPoint } from "@/lib/ruby-bed";
 import { svgImage } from "@/components/design-preview";
+import { STAMP_THICKNESS_MM } from "@/workflow/policy";
 
 type Vector = [number, number, number];
 
@@ -203,7 +204,7 @@ export default function LaserPreview({
           const { width, height } = footprint;
           const x = -RUBY_BED.width / 2 + (originX ?? 0) + width / 2;
           const z = -RUBY_BED.height / 2 + (originY ?? 0) + height / 2;
-          const thickness = file.kind === "stamp" ? 2.3 : file.thicknessMm;
+          const thickness = file.kind === "stamp" ? STAMP_THICKNESS_MM : file.thicknessMm;
           const color =
             file.kind === "stamp"
               ? "#b3a797"

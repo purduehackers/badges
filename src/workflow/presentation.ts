@@ -1,6 +1,6 @@
-import { checkIds, remainingCriteria, staticPassed, reviewMaterials } from "./contracts.ts";
+import { checkIds, reviewMaterials } from "./contracts.ts";
+import { remainingCriteria, staticPassed } from "./review.ts";
 import type { Check, Criterion, Review } from "./contracts.ts";
-export { sheetLabel, sheetKey } from "./sheets.ts";
 
 const unclearReply = "Ask me again, or use the latest card to continue.";
 

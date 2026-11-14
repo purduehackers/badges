@@ -1,7 +1,8 @@
 import { Resvg } from "@resvg/resvg-js";
-import { XMLSerializer } from "@xmldom/xmldom";
 
-import { inspectSvg, parseSvg } from "./svg.ts";
+import { STAMP_SIZE_IN } from "./policy.ts";
+import { inspectSvg } from "./svg.ts";
+import { svgGroup } from "../lib/svg-document.ts";
 
 export function physicalDimensions(cuts: string[], role: "badge" | "stamp", sizeIn: number) {
   // Measure curves directly; export coordinates must not determine tessellation cost.
@@ -20,28 +21,19 @@ export function physicalDimensions(cuts: string[], role: "badge" | "stamp", size
 }
 
 /** Measure all pieces together, never the export canvas or just the first contour. */
-export function physicalSvg(
-  source: string,
-  role: "badge" | "stamp",
-  sizeIn: number,
-  mirror: boolean,
-): string {
+export function prepareDesign(source: string, role: "badge" | "stamp", sizeIn: number) {
   const { cuts } = inspectSvg(source, role);
   const { box, scale, widthIn, heightIn } = physicalDimensions(cuts, role, sizeIn);
-  const { root } = parseSvg(source),
-    document = root.ownerDocument;
-  if (!document) throw new Error("Missing SVG document.");
-  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  for (const attribute of Array.from(root.attributes))
-    if (!["xmlns", "viewBox", "width", "height"].includes(attribute.name))
-      group.setAttribute(attribute.name, attribute.value);
-  for (const child of Array.from(root.childNodes)) group.appendChild(child.cloneNode(true));
-  const artwork = new XMLSerializer().serializeToString(group);
+  const artwork = svgGroup(source);
   // The 0.5 mm preview/export bleed keeps the cut stroke visible without changing cut size.
   const w = widthIn * 25.4,
     h = heightIn * 25.4;
-  if (role === "stamp" && Math.abs(sizeIn - 1.5) > 1e-9)
+  if (role === "stamp" && Math.abs(sizeIn - STAMP_SIZE_IN) > 1e-9)
     throw new Error("Stamp shortest side must be 1.5 inches.");
-  const transform = `${mirror ? `translate(${w + 0.5} 0.5) scale(-1 1)` : "translate(0.5 0.5)"} scale(${scale}) translate(${-box.minX} ${-box.minY})`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w + 1}mm" height="${h + 1}mm" viewBox="0 0 ${w + 1} ${h + 1}"><g transform="${transform}">${artwork}</g></svg>`;
+  function drawing(mirror: boolean) {
+    const transform = `${mirror ? `translate(${w + 0.5} 0.5) scale(-1 1)` : "translate(0.5 0.5)"} scale(${scale}) translate(${-box.minX} ${-box.minY})`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w + 1}mm" height="${h + 1}mm" viewBox="0 0 ${w + 1} ${h + 1}"><g transform="${transform}">${artwork}</g></svg>`;
+  }
+  const previewSvg = drawing(false);
+  return { svg: role === "stamp" ? drawing(true) : previewSvg, previewSvg, widthIn, heightIn };
 }
