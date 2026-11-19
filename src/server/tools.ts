@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badgeTools, type BadgeToolName } from "../workflow/tools.ts";
 import { reviewMaterials } from "../workflow/contracts.ts";
-import { badgeSize, remainingCriteria, staticPassed } from "../workflow/review.ts";
+import { badgeSize, designRoles, remainingCriteria, staticPassed } from "../workflow/review.ts";
 
 import type { StoredReview } from "../workflow/contracts.ts";
 import { assertScope, assertControl, type Action, type Actor } from "../workflow/service.ts";
@@ -46,6 +46,7 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
   const { review } = stored;
   const step = reviewStep(review);
   const candidates: [BadgeToolName, Action][] = [];
+  if (step === "missing") candidates.push(["skip_stamp", { kind: "skip-stamp" }]);
   if (step === "files")
     candidates.push([
       "identify_files",
@@ -112,10 +113,12 @@ export async function reviewStatus(context: Context) {
       filename: asset.name,
     })),
     events: step === "event" ? await cms.events() : undefined,
+    stampSkipped: review.stampSkipped ?? false,
     checks: {
       passed: staticPassed(review),
-      badge: verificationChecks(review, "badge"),
-      stamp: verificationChecks(review, "stamp"),
+      ...Object.fromEntries(
+        designRoles(review).map((role) => [role, verificationChecks(review, role)]),
+      ),
     },
     remainingConfirmations: remainingCriteria(review),
     quantity: review.targetCount,
@@ -185,6 +188,9 @@ export async function executeTool(request: z.output<typeof badgeEndpoints.tool.r
       break;
     case "keep_design":
       action = { kind: "keep-design" };
+      break;
+    case "skip_stamp":
+      action = { kind: "skip-stamp" };
       break;
     case "set_target_quantity":
       action = {

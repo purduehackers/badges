@@ -23,7 +23,7 @@ export function singleRole(text: string, previous?: Review): Criterion | undefin
   if (!previous) return undefined;
   if (previous.pendingRole) return previous.pendingRole;
   if (reviewStep(previous) === "fix") return fixRole(previous);
-  if (previous.badge && !previous.stamp) return "stamp";
+  if (previous.badge && !previous.stamp && !previous.stampSkipped) return "stamp";
   if (previous.stamp && !previous.badge) return "badge";
   return undefined;
 }

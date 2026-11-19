@@ -1,4 +1,4 @@
-import { contextHash, designHash, hash } from "../workflow/review.ts";
+import { contextHash, designHash, designRoles, hasDesigns, hash } from "../workflow/review.ts";
 import type { BadgeStore } from "../workflow/store.ts";
 import type { Publisher } from "../workflow/worker.ts";
 import type { Review } from "../workflow/contracts.ts";
@@ -33,8 +33,11 @@ const directory = (review: Review): string => {
   return `badges/${review.event.version}`;
 };
 
-async function files(review: Review, store: BadgeStore): Promise<Map<string, Uint8Array>> {
-  const { badge, stamp, event, settings } = review;
+export async function publicationFiles(
+  review: Review,
+  store: BadgeStore,
+): Promise<Map<string, Uint8Array>> {
+  const { event, settings } = review;
   const reviewer = review.decisions.find(
     (decision) =>
       decision.criterion === "badge" &&
@@ -42,17 +45,15 @@ async function files(review: Review, store: BadgeStore): Promise<Map<string, Uin
       decision.context === designHash(review, "badge"),
   )?.reviewer;
   const layout = review.layouts.find((candidate) => candidate.id === review.selectedLayout);
-  if (!badge || !stamp || !event || !settings || !reviewer || !layout)
+  if (!hasDesigns(review) || !event || !settings || !reviewer || !layout)
     throw new Error("Review evidence is incomplete.");
   const content = new Map<string, Uint8Array>();
-  const sources = new Map([
-    ["badge-source.svg", badge.hash],
-    ["stamp-source.svg", stamp.hash],
-    ["badge.svg", review.manufacturing?.badge],
-    ["stamp.svg", review.manufacturing?.stamp],
-    ["badge.png", review.manufacturing?.badgePreview],
-    ["stamp.png", review.manufacturing?.stampPreview],
-  ]);
+  const sources = new Map<string, string | undefined>();
+  for (const role of designRoles(review)) {
+    sources.set(`${role}-source.svg`, review[role]?.hash);
+    sources.set(`${role}.svg`, review.manufacturing?.[role]);
+    sources.set(`${role}.png`, review.manufacturing?.[`${role}Preview`]);
+  }
   for (const [index, name] of sheetFileNames(layout.sheetSizes).entries())
     sources.set(name, layout.sheets[index]);
   for (const [name, digest] of sources) {
@@ -68,7 +69,12 @@ async function files(review: Review, store: BadgeStore): Promise<Map<string, Uin
   content.set(
     "README.md",
     Buffer.from(
-      `# ${event.name}\n\n## Badge\n\n![Badge](badge.png)\n\n[Download](badge.svg)\n\n## Stamp\n\n![Stamp](stamp.png)\n\n[Download](stamp.svg)\n`,
+      `# ${event.name}\n\n${designRoles(review)
+        .map((role) => {
+          const title = role === "badge" ? "Badge" : "Stamp";
+          return `## ${title}\n\n![${title}](${role}.png)\n\n[Download](${role}.svg)\n`;
+        })
+        .join("\n")}`,
     ),
   );
   return content;
@@ -82,7 +88,7 @@ class GithubPublisher implements Publisher {
   async archive(review: Review) {
     const github = client(),
       prefix = directory(review),
-      content = await files(review, this.repository);
+      content = await publicationFiles(review, this.repository);
     const branch = `wack/badge-${review.id}-${review.generation}`;
     const repo = (await github.rest.repos.get(repository)).data;
     const base = repo.default_branch;
@@ -206,7 +212,7 @@ class GithubPublisher implements Publisher {
         "The GitHub revision changed after approval. Start a new review with the changed SVGs.",
       );
     // Independently read back all reviewed bytes at the exact head before merging.
-    const expectedFiles = await files(review, this.repository);
+    const expectedFiles = await publicationFiles(review, this.repository);
     await verifyFiles(github, prefix, pr.head.sha, expectedFiles);
     const expectedPaths = new Set([...expectedFiles.keys()].map((name) => `${prefix}/${name}`));
     const changed = await github.paginate(github.rest.pulls.listFiles, {
@@ -281,7 +287,7 @@ async function verifyFiles(
   expectedFiles: Map<string, Uint8Array>,
 ): Promise<void> {
   if ((await obsoleteSheets(github, prefix, head, expectedFiles)).length)
-    throw new Error("The repository still contains cutting sheets from a different layout.");
+    throw new Error("The repository still contains files from a different batch.");
   for (const [name, expected] of expectedFiles) {
     const response = await github.rest.repos.getContent({
       ...repository,
@@ -317,7 +323,13 @@ async function obsoleteSheets(
     const response = await github.rest.repos.getContent({ ...repository, path: prefix, ref });
     if (!Array.isArray(response.data)) throw new Error("The badge folder is not a directory.");
     return response.data
-      .filter((file) => file.type === "file" && cuttingFile(file.name) && !files.has(file.name))
+      .filter(
+        (file) =>
+          file.type === "file" &&
+          (cuttingFile(file.name) ||
+            ["stamp-source.svg", "stamp.svg", "stamp.png"].includes(file.name)) &&
+          !files.has(file.name),
+      )
       .map((file) => ({
         path: file.path,
         mode: "100644" as const,

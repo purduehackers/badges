@@ -30,7 +30,7 @@ export const badgeTools = {
   },
   confirm_design: {
     description:
-      "Record the designer's explicit confirmation of both current designs after human QA. A question never confirms a design.",
+      "Record the designer's explicit confirmation of every current design after human QA. A question never confirms a design.",
     schema: z.strictObject(current),
   },
   request_replacement: {
@@ -39,6 +39,11 @@ export const badgeTools = {
   },
   keep_design: {
     description: "Cancel the designer's pending replacement upload.",
+    schema: z.strictObject(current),
+  },
+  skip_stamp: {
+    description:
+      "Continue with only the badge when the designer explicitly says there is no stamp.",
     schema: z.strictObject(current),
   },
   estimate_attendance: {

@@ -1,5 +1,5 @@
 import { checkIds, reviewMaterials } from "./contracts.ts";
-import { remainingCriteria, staticPassed } from "./review.ts";
+import { designRoles, hasDesigns, remainingCriteria, staticPassed } from "./review.ts";
 import type { Check, Criterion, Review } from "./contracts.ts";
 
 const unclearReply = "Ask me again, or use the latest card to continue.";
@@ -144,7 +144,7 @@ export type ReviewStep =
   | "error";
 export function fixRole(review: Review): Criterion {
   return (
-    (["badge", "stamp"] as const).find((role) =>
+    designRoles(review).find((role) =>
       verificationChecks(review, role).some((check) => check.status !== "pass"),
     ) ?? "badge"
   );
@@ -154,8 +154,7 @@ export function reviewStep(review: Review): ReviewStep {
   // A requested upload must not hide the findings that explain the revision.
   if (
     review.rolesConfirmed &&
-    review.badge &&
-    review.stamp &&
+    hasDesigns(review) &&
     review.event &&
     reviewMaterials(review).length &&
     review.checks.length &&
@@ -166,7 +165,7 @@ export function reviewStep(review: Review): ReviewStep {
   if (review.publication?.shortlink) return "done";
   if (review.approval) return "publishing";
   if (!review.rolesConfirmed) return "files";
-  if (!review.badge || !review.stamp) return "missing";
+  if (!hasDesigns(review)) return "missing";
   if (!review.event) return "event";
   if (!reviewMaterials(review).length) return "material";
   if (!review.checks.length) return "checking";
@@ -187,7 +186,9 @@ export function reviewPrompt(review: Review): string {
         ? "Is this your badge or your stamp?"
         : "Which design is the badge? I’ll use the other one as the stamp.";
     case "missing":
-      return `Upload your ${review.badge ? "stamp" : "badge"} SVG to continue.`;
+      return review.badge
+        ? "Upload your stamp SVG, or continue without a stamp."
+        : "Upload your badge SVG to continue.";
     case "upload":
       return `Attach your updated ${review.pendingRole} SVG in this thread.`;
     case "material":
@@ -209,7 +210,7 @@ export function reviewPrompt(review: Review): string {
     case "preparing":
       return "Preparing the previews…";
     case "qa":
-      return "Check your badge’s version, date, readability, and thin connections. Check that your stamp will leave a clear impression. Confirm when both designs look right.";
+      return `Check your badge’s version, date, readability, and thin connections.${review.stampSkipped ? " Confirm when the design looks right." : " Check that your stamp will leave a clear impression. Confirm when both designs look right."}`;
     case "packing":
       return "Arranging your badges…";
     case "quantity": {
@@ -227,7 +228,9 @@ export function reviewPrompt(review: Review): string {
     case "publishing":
       return "Saving your files…";
     case "done":
-      return "Your badge, stamp, and cutting sheets are saved.";
+      return review.stampSkipped
+        ? "Your badge and cutting sheets are saved."
+        : "Your badge, stamp, and cutting sheets are saved.";
     case "error":
       return review.publication && !review.publication.shortlink
         ? "Your files are saved. I couldn’t create the short link. Retry to finish."

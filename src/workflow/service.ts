@@ -9,6 +9,7 @@ import { includesMaterial, reviewMaterials, RUBRIC_VERSION } from "./contracts.t
 import {
   contextHash,
   designHash,
+  hasDesigns,
   invalidate,
   ready,
   remainingCriteria,
@@ -181,6 +182,10 @@ class BadgeService {
     action: Action,
   ): Promise<{ next: Review; jobs: JobKind[] }> {
     switch (action.kind) {
+      case "skip-stamp": {
+        const next = { ...invalidate(review), stampSkipped: true };
+        return { next, jobs: inspectionJobs(next) };
+      }
       case "keep-design": {
         const { pendingRole: _role, ...next } = review;
         return { next, jobs: [] };
@@ -330,6 +335,7 @@ class BadgeService {
         const next = {
           ...invalidate(review, action.role),
           [action.role]: asset,
+          ...(action.role === "stamp" ? { stampSkipped: false } : {}),
           uploads: [asset],
           rolesConfirmed: true,
         };
@@ -355,8 +361,7 @@ export function createBadgeService(
 
 function inspectionJobs(review: Review): JobKind[] {
   return review.rolesConfirmed &&
-    review.badge &&
-    review.stamp &&
+    hasDesigns(review) &&
     review.event &&
     reviewMaterials(review).length
     ? ["inspect"]
@@ -368,11 +373,16 @@ function assignUploads(review: Review, text: string, previous?: Review): Review 
     const role = singleRole(text, previous);
     const asset = review.uploads[0];
     return role && asset
-      ? { ...review, [role]: asset, rolesConfirmed: true }
+      ? {
+          ...review,
+          [role]: asset,
+          ...(role === "stamp" ? { stampSkipped: false } : {}),
+          rolesConfirmed: true,
+        }
       : { ...review, rolesConfirmed: false };
   }
   const index = badgeIndex(text);
-  const { badge: _badge, stamp: _stamp, ...rest } = review;
+  const { badge: _badge, stamp: _stamp, stampSkipped: _skipped, ...rest } = review;
   return index === undefined
     ? { ...rest, rolesConfirmed: false }
     : {
@@ -392,6 +402,7 @@ function assertActor(review: Review, actor: Actor, action: Action) {
     action.kind === "replace" ||
     action.kind === "material" ||
     action.kind === "keep-design" ||
+    action.kind === "skip-stamp" ||
     action.kind === "choose-material" ||
     action.kind === "confirm"
   )
@@ -425,6 +436,10 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
   )
     throw new Error("Confirm the designs before planning production.");
   switch (action.kind) {
+    case "skip-stamp":
+      if (step !== "missing" || !review.badge || review.stamp)
+        throw new Error("Use the latest review card.");
+      break;
     case "material":
     case "choose-material":
       if (!["material", "qa", "fix"].includes(step)) throw new Error("Use the latest review card.");
@@ -437,7 +452,7 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
       break;
     case "publish":
       if (!ready(review) || step !== "layout")
-        throw new Error("Confirm both designs and arrange the badges first.");
+        throw new Error("Confirm the designs and arrange the badges first.");
       break;
     case "roles":
     case "replace":
@@ -468,12 +483,17 @@ async function configure(review: Review, action: Action, cms: Cms): Promise<Revi
     const badge = review.uploads[action.badge],
       stamp = review.uploads[1 - action.badge];
     if (!badge || !stamp) throw new Error("Select which of the two previews is the badge.");
-    return { ...next, badge, stamp, rolesConfirmed: true };
+    return { ...next, badge, stamp, stampSkipped: false, rolesConfirmed: true };
   }
   if (action.kind === "replace") {
     const asset = review.uploads[0];
     if (review.uploads.length !== 1 || !asset) throw new Error("Upload one SVG file.");
-    return { ...next, [action.role]: asset, rolesConfirmed: true };
+    return {
+      ...next,
+      [action.role]: asset,
+      ...(action.role === "stamp" ? { stampSkipped: false } : {}),
+      rolesConfirmed: true,
+    };
   }
   const id = action.kind === "event" ? action.id : review.event?.id;
   const event = id ? await cms.event(id) : undefined;

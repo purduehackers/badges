@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Asset, Review } from "../workflow/contracts.ts";
 import { fixRole, reviewStep } from "../workflow/presentation.ts";
+import { designRoles } from "../workflow/review.ts";
 import { renderSvg } from "../workflow/svg.ts";
 import { Resvg } from "@resvg/resvg-js";
 
@@ -49,7 +50,7 @@ async function filePreview(uploads: Asset[], store: BadgeStore, roles: string[] 
 }
 export async function identifiedPreview(review: Review, store: BadgeStore) {
   if (!review.rolesConfirmed) return undefined;
-  const entries = (["badge", "stamp"] as const).flatMap((role) =>
+  const entries = designRoles(review).flatMap((role) =>
     review[role] ? [{ asset: review[role], label: role === "badge" ? "Badge" : "Stamp" }] : [],
   );
   return entries.length
@@ -67,7 +68,10 @@ export async function previewFiles(review: Review, store: BadgeStore) {
   }
   if ((step === "qa" || step === "done") && review.manufacturing) {
     const model = review.manufacturing;
-    const hashes = [model.badge3d?.preview ?? model.badgePreview, model.stampPreview];
+    const hashes = [
+      model.badge3d?.preview ?? model.badgePreview,
+      ...(!review.stampSkipped && model.stampPreview ? [model.stampPreview] : []),
+    ];
     const images = await Promise.all(
       hashes.map(async (digest) => (await store.asset(digest)).bytes.toString("base64")),
     );

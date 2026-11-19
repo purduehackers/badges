@@ -11,6 +11,7 @@ export function contextHash(review: Review): string {
     JSON.stringify({
       badge: review.badge?.hash,
       stamp: review.stamp?.hash,
+      ...(review.stampSkipped ? { stampSkipped: true } : {}),
       event: review.event,
       settings: review.settings,
       fittedSizeIn: review.fittedSizeIn,
@@ -45,22 +46,33 @@ export function designHash(review: Review, role: Criterion): string {
   );
 }
 
+export function designRoles(review: Review): readonly Criterion[] {
+  return review.stampSkipped ? ["badge"] : criteria;
+}
+
+export function hasDesigns(review: Review): boolean {
+  return designRoles(review).every((role) => Boolean(review[role]));
+}
+
 export function staticPassed(review: Review): boolean {
-  return ["badge", "stamp"].every((role) =>
-    checkIds.every((id) =>
-      review.checks.some(
-        (check) =>
-          check.role === role &&
-          check.id === id &&
-          check.status === "pass" &&
-          check.evidenceId === (role === "badge" ? review.badge?.hash : review.stamp?.hash),
+  return (
+    hasDesigns(review) &&
+    designRoles(review).every((role) =>
+      checkIds.every((id) =>
+        review.checks.some(
+          (check) =>
+            check.role === role &&
+            check.id === id &&
+            check.status === "pass" &&
+            check.evidenceId === review[role]?.hash,
+        ),
       ),
-    ),
+    )
   );
 }
 
 export function remainingCriteria(review: Review): Criterion[] {
-  return criteria.filter(
+  return designRoles(review).filter(
     (criterion) =>
       !review.decisions.some(
         (decision) =>

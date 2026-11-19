@@ -23,7 +23,7 @@ const commonActions = [
   z.strictObject({ kind: z.literal("layout"), id: z.string().regex(/^[a-f0-9]{64}$/u) }),
 
   z.strictObject({
-    kind: z.enum(["publish", "retry", "refresh", "choose-material", "keep-design"]),
+    kind: z.enum(["publish", "retry", "refresh", "choose-material", "keep-design", "skip-stamp"]),
   }),
 ] as const;
 export const actionSchema = z.discriminatedUnion("kind", [

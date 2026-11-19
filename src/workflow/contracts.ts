@@ -135,6 +135,7 @@ export const reviewSchema = z.strictObject({
   pendingRole: criterionSchema.optional(),
   badge: assetSchema.optional(),
   stamp: assetSchema.optional(),
+  stampSkipped: z.boolean().optional(),
   event: eventSchema.optional(),
   settings: settingsSchema.optional(),
   // Retained for stored reviews created before multiple colors were supported.
@@ -156,7 +157,7 @@ export const reviewSchema = z.strictObject({
   manufacturing: z
     .strictObject({
       badge: digestSchema,
-      stamp: digestSchema,
+      stamp: digestSchema.optional(),
       badgePreview: digestSchema,
       badge3d: z
         .strictObject({
@@ -166,11 +167,11 @@ export const reviewSchema = z.strictObject({
           thicknessMm: z.number().positive().optional(),
         })
         .optional(),
-      stampPreview: digestSchema,
+      stampPreview: digestSchema.optional(),
       badgeWidthIn: z.number().positive(),
       badgeHeightIn: z.number().positive(),
-      stampWidthIn: z.number().positive(),
-      stampHeightIn: z.number().positive(),
+      stampWidthIn: z.number().positive().optional(),
+      stampHeightIn: z.number().positive().optional(),
     })
     .optional(),
   decisions: z.array(decisionSchema),

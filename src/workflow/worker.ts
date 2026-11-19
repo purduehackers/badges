@@ -4,6 +4,8 @@ import { reviewMaterials } from "./contracts.ts";
 import {
   badgeSize,
   contextHash,
+  designRoles,
+  hasDesigns,
   ready,
   remainingCriteria,
   reviewable,
@@ -33,9 +35,9 @@ export interface Publisher {
 }
 export type DesignRenderer = (
   badgeSvg: string,
-  stampSvg: string,
+  stampSvg: string | undefined,
   material: BadgeMaterial,
-) => Promise<{ badge: Uint8Array; stamp: Uint8Array }>;
+) => Promise<{ badge: Uint8Array; stamp?: Uint8Array }>;
 type Inventory = Pick<
   ReturnType<typeof createBadgeInventory>,
   "plan" | "defaultBatch" | "reserve" | "consume" | "release"
@@ -161,7 +163,7 @@ async function arrange(
     !review.settings ||
     !reviewMaterials(review).length
   )
-    throw new Error("Confirm both designs before arranging them.");
+    throw new Error("Confirm the designs before arranging them.");
   await assertCurrentEvent(review, cms);
   const sheetBatch = review.sheetBatch ?? (await inventory?.defaultBatch(reviewMaterials(review)));
   if (!sheetBatch)
@@ -252,7 +254,7 @@ async function prepare(
 ): Promise<Review> {
   if (
     !review.badge ||
-    !review.stamp ||
+    !hasDesigns(review) ||
     !review.settings ||
     !reviewMaterials(review).length ||
     !staticPassed(review)
@@ -261,41 +263,54 @@ async function prepare(
   const material = reviewMaterials(review)[0];
   if (!material) throw new Error("Choose acrylic before preparing the preview.");
   const badgeSource = (await store.asset(review.badge.hash)).bytes.toString("utf8");
-  const stampSource = (await store.asset(review.stamp.hash)).bytes.toString("utf8");
   const sizeIn = badgeSize(review) ?? review.settings.badgeSizeIn;
   const badge = prepareDesign(badgeSource, "badge", sizeIn);
-  const stamp = prepareDesign(stampSource, "stamp", STAMP_SIZE_IN);
-  const previews = await renderer(badge.previewSvg, stamp.previewSvg, material);
+  const stamp =
+    !review.stampSkipped && review.stamp
+      ? prepareDesign(
+          (await store.asset(review.stamp.hash)).bytes.toString("utf8"),
+          "stamp",
+          STAMP_SIZE_IN,
+        )
+      : undefined;
+  const previews = await renderer(badge.previewSvg, stamp?.previewSvg, material);
+  if (stamp && !previews.stamp) throw new Error("The stamp preview is missing.");
   return {
     ...review,
     manufacturing: {
       badge: await store.putAsset(Buffer.from(badge.svg), "image/svg+xml"),
-      stamp: await store.putAsset(Buffer.from(stamp.svg), "image/svg+xml"),
       badgePreview: await store.putAsset(renderSvg(badge.svg), "image/png"),
       badge3d: {
         preview: await store.putAsset(previews.badge, "image/png"),
         material: materialDescription(material),
         ...material,
       },
-      stampPreview: await store.putAsset(previews.stamp, "image/png"),
       badgeWidthIn: badge.widthIn,
       badgeHeightIn: badge.heightIn,
-      stampWidthIn: stamp.widthIn,
-      stampHeightIn: stamp.heightIn,
+      ...(stamp && previews.stamp
+        ? {
+            stamp: await store.putAsset(Buffer.from(stamp.svg), "image/svg+xml"),
+            stampPreview: await store.putAsset(previews.stamp, "image/png"),
+            stampWidthIn: stamp.widthIn,
+            stampHeightIn: stamp.heightIn,
+          }
+        : {}),
     },
   };
 }
 async function inspect(review: Review, store: BadgeStore): Promise<Review> {
-  if (!review.badge || !review.stamp || !review.rolesConfirmed)
-    throw new Error("Identify the badge and stamp first.");
-  const badge = inspectSvg((await store.asset(review.badge.hash)).bytes.toString("utf8"), "badge");
-  const stamp = inspectSvg((await store.asset(review.stamp.hash)).bytes.toString("utf8"), "stamp");
+  if (!hasDesigns(review) || !review.rolesConfirmed) throw new Error("Identify the designs first.");
+  const designs = await Promise.all(
+    designRoles(review).map(async (role) =>
+      inspectSvg((await store.asset(review[role]!.hash)).bytes.toString("utf8"), role),
+    ),
+  );
   const previews = await Promise.all(
-    [badge.source, stamp.source].map((source) => store.putAsset(renderSvg(source), "image/png")),
+    designs.map(({ source }) => store.putAsset(renderSvg(source), "image/png")),
   );
   return {
     ...review,
-    checks: [...badge.checks, ...stamp.checks],
+    checks: designs.flatMap(({ checks }) => checks),
     previews,
   };
 }
