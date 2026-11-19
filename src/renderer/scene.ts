@@ -1,7 +1,6 @@
 import * as THREE from "three";
-import { MATERIAL_TYPE_CONFIGS } from "../lib/materials.ts";
 import { readArtwork } from "./artwork.ts";
-import { badgeSurface, type SurfaceOptions } from "./surface.ts";
+import { acrylicProperties, badgeSurface, type SurfaceOptions } from "./surface.ts";
 import type { RenderInput } from "./types.ts";
 
 export async function createBadgeScene(input: RenderInput, options: SurfaceOptions = {}) {
@@ -35,20 +34,17 @@ export async function createBadgeScene(input: RenderInput, options: SurfaceOptio
   body.computeBoundingBox();
   const center = body.boundingBox!.getCenter(new THREE.Vector3());
   body.translate(-center.x, -center.y, -center.z);
-  const base = MATERIAL_TYPE_CONFIGS[input.material.type].physical;
-  const material = new THREE.MeshPhysicalMaterial({
-    ...base,
-    color: input.material.color,
-    transparent: false,
-    opacity: 1,
-    thickness: input.thicknessMm,
-    ior: 1.49,
-    envMapIntensity: 0.8,
-    metalness: 0,
-    side: THREE.DoubleSide,
-  });
-  const surface = badgeSurface(engraving, input.material, width * scale, height * scale, options);
-  surface.material.thickness = input.thicknessMm;
+  const material = new THREE.MeshPhysicalMaterial(
+    acrylicProperties(input.material, input.thicknessMm),
+  );
+  const surface = badgeSurface(
+    engraving,
+    input.material,
+    input.thicknessMm,
+    width * scale,
+    height * scale,
+    options,
+  );
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#f3f2ef");
   const badge = new THREE.Group();
@@ -106,6 +102,7 @@ export async function createBadgeScene(input: RenderInput, options: SurfaceOptio
     material.dispose();
     surface.dispose();
     renderer.dispose();
+    renderer.forceContextLoss();
   }
   return { renderer, scene, camera, half, badge, dispose };
 }

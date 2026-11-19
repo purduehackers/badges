@@ -2,20 +2,20 @@ import { packingProposalSchema } from "./packing-proposal.ts";
 import { randomUUID } from "node:crypto";
 
 import { DISCORD_GUILD_ID } from "../server/platform.ts";
-import { messagePayloadSchema } from "../server/platform.ts";
-import type { MessagePayload, Principal } from "../server/platform.ts";
+import { messagePayloadSchema } from "./api.ts";
+import type { MessagePayload, Principal } from "./api.ts";
 
+import { includesMaterial, reviewMaterials, RUBRIC_VERSION } from "./contracts.ts";
 import {
-  BADGES_CHANNEL_ID,
   contextHash,
   designHash,
+  hasDesigns,
   invalidate,
   ready,
   remainingCriteria,
   reviewable,
-  reviewMaterials,
-  RUBRIC_VERSION,
-} from "./contracts.ts";
+} from "./review.ts";
+import { BADGES_CHANNEL_ID } from "./wire.ts";
 import type { Asset, BadgeEvent, JobKind, Person, Review, StoredReview } from "./contracts.ts";
 import { badgeIndex, inferEvent, singleRole } from "./intake.ts";
 import type { createBadgeInventory } from "./inventory.ts";
@@ -24,7 +24,7 @@ import { expandSheets, resolveSheets } from "./sheets.ts";
 import { reviewStep } from "./presentation.ts";
 import { StaleReview } from "./store.ts";
 import type { BadgeStore } from "./store.ts";
-import { parseSvg } from "./svg.ts";
+import { parseSvg } from "../lib/svg-document.ts";
 import type { Action } from "./wire.ts";
 export type { Action } from "./wire.ts";
 
@@ -128,7 +128,7 @@ class BadgeService {
         uploads,
         sourceMessageId: messageId,
         ...(event ? { event } : {}),
-        settings: productionSettings(event),
+        settings: productionSettings(),
       },
       payload.content,
       previous?.review,
@@ -182,6 +182,10 @@ class BadgeService {
     action: Action,
   ): Promise<{ next: Review; jobs: JobKind[] }> {
     switch (action.kind) {
+      case "skip-stamp": {
+        const next = { ...invalidate(review), stampSkipped: true };
+        return { next, jobs: inspectionJobs(next) };
+      }
       case "keep-design": {
         const { pendingRole: _role, ...next } = review;
         return { next, jobs: [] };
@@ -221,14 +225,21 @@ class BadgeService {
           review.sheetBatch ?? (await this.inventory.defaultBatch(reviewMaterials(review)));
         return {
           next: { ...review, sheetBatch, decisions: [...review.decisions, ...confirmed] },
-          jobs: [],
+          jobs: review.targetCount === undefined ? [] : ["pack"],
         };
       }
       case "sheets": {
         if (!action.sheets || !reviewMaterials(review).length)
           throw new Error("Choose the sheets to use for this batch.");
-        const sheetBatch = resolveSheets(action.sheets, reviewMaterials(review));
-        await this.inventory.plan(reviewMaterials(review), expandSheets(sheetBatch));
+        const materials = [...reviewMaterials(review)];
+        for (const sheet of action.sheets)
+          if (sheet.material && !includesMaterial(materials, sheet.material))
+            materials.push(sheet.material);
+        const batch = resolveSheets(action.sheets, materials);
+        const plan = await this.inventory.plan(materials, expandSheets(batch));
+        const selection = await this.inventory.selectSheets(
+          plan.map(({ itemId, quantity }) => ({ itemId, quantity })),
+        );
         const {
           layouts: _layouts,
           selectedLayout: _selected,
@@ -242,7 +253,10 @@ class BadgeService {
         return {
           next: {
             ...rest,
-            sheetBatch,
+            sheetBatch: selection.sheetBatch,
+            ...(materials.length > reviewMaterials(review).length
+              ? { materials: selection.materials }
+              : {}),
             layouts: [],
             layoutAttempt: 0,
             manufacturer: actor.person,
@@ -270,7 +284,7 @@ class BadgeService {
             ...rest,
             manufacturer: actor.person,
             generation: review.generation + 1,
-            targetCount: plan.layout.count,
+            targetCount: plan.targetCount ?? plan.layout.count,
             fittedSizeIn: plan.layout.sizeIn,
             sheetBatch: plan.sheets,
             layouts: [plan.layout],
@@ -287,6 +301,10 @@ class BadgeService {
       }
       case "quantity": {
         const {
+          approval: _approval,
+          publication,
+          pr: _pr,
+          repositoryHead: _head,
           selectedLayout: _layout,
           stockPlan: _stock,
           failure: _failure,
@@ -296,6 +314,12 @@ class BadgeService {
         } = review;
         const next = {
           ...rest,
+          ...(publication?.shortlink
+            ? {
+                previousShortlink: publication.shortlink,
+                stockReceipt: review.stockReceipt ?? `${review.id}:${review.generation}`,
+              }
+            : {}),
           generation: review.generation + 1,
           manufacturer: actor.person,
           ...(action.count === undefined ? {} : { targetCount: action.count }),
@@ -311,6 +335,7 @@ class BadgeService {
         const next = {
           ...invalidate(review, action.role),
           [action.role]: asset,
+          ...(action.role === "stamp" ? { stampSkipped: false } : {}),
           uploads: [asset],
           rolesConfirmed: true,
         };
@@ -336,8 +361,7 @@ export function createBadgeService(
 
 function inspectionJobs(review: Review): JobKind[] {
   return review.rolesConfirmed &&
-    review.badge &&
-    review.stamp &&
+    hasDesigns(review) &&
     review.event &&
     reviewMaterials(review).length
     ? ["inspect"]
@@ -349,11 +373,16 @@ function assignUploads(review: Review, text: string, previous?: Review): Review 
     const role = singleRole(text, previous);
     const asset = review.uploads[0];
     return role && asset
-      ? { ...review, [role]: asset, rolesConfirmed: true }
+      ? {
+          ...review,
+          [role]: asset,
+          ...(role === "stamp" ? { stampSkipped: false } : {}),
+          rolesConfirmed: true,
+        }
       : { ...review, rolesConfirmed: false };
   }
   const index = badgeIndex(text);
-  const { badge: _badge, stamp: _stamp, ...rest } = review;
+  const { badge: _badge, stamp: _stamp, stampSkipped: _skipped, ...rest } = review;
   return index === undefined
     ? { ...rest, rolesConfirmed: false }
     : {
@@ -373,6 +402,7 @@ function assertActor(review: Review, actor: Actor, action: Action) {
     action.kind === "replace" ||
     action.kind === "material" ||
     action.kind === "keep-design" ||
+    action.kind === "skip-stamp" ||
     action.kind === "choose-material" ||
     action.kind === "confirm"
   )
@@ -397,13 +427,19 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
     !review.contextChanged &&
     reviewable(review) &&
     remainingCriteria(review).length === 0;
+  const revisingQuantity = action.kind === "quantity" && step === "done";
   if (
     ["quantity", "layout", "publish", "sheets"].includes(action.kind) &&
     !["quantity", "layout"].includes(step) &&
-    !recoveringSheets
+    !recoveringSheets &&
+    !revisingQuantity
   )
     throw new Error("Confirm the designs before planning production.");
   switch (action.kind) {
+    case "skip-stamp":
+      if (step !== "missing" || !review.badge || review.stamp)
+        throw new Error("Use the latest review card.");
+      break;
     case "material":
     case "choose-material":
       if (!["material", "qa", "fix"].includes(step)) throw new Error("Use the latest review card.");
@@ -416,7 +452,7 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
       break;
     case "publish":
       if (!ready(review) || step !== "layout")
-        throw new Error("Confirm both designs and arrange the badges first.");
+        throw new Error("Confirm the designs and arrange the badges first.");
       break;
     case "roles":
     case "replace":
@@ -431,7 +467,10 @@ export function assertControl(review: Review, actor: Actor, action: Action) {
       break;
     case "layout":
     case "quantity":
+      break;
     case "sheets":
+      if (review.stockReceipt)
+        throw new Error("Quantity revisions use the sheets already allocated to this batch.");
       break;
     case "upload":
       break;
@@ -444,17 +483,22 @@ async function configure(review: Review, action: Action, cms: Cms): Promise<Revi
     const badge = review.uploads[action.badge],
       stamp = review.uploads[1 - action.badge];
     if (!badge || !stamp) throw new Error("Select which of the two previews is the badge.");
-    return { ...next, badge, stamp, rolesConfirmed: true };
+    return { ...next, badge, stamp, stampSkipped: false, rolesConfirmed: true };
   }
   if (action.kind === "replace") {
     const asset = review.uploads[0];
     if (review.uploads.length !== 1 || !asset) throw new Error("Upload one SVG file.");
-    return { ...next, [action.role]: asset, rolesConfirmed: true };
+    return {
+      ...next,
+      [action.role]: asset,
+      ...(action.role === "stamp" ? { stampSkipped: false } : {}),
+      rolesConfirmed: true,
+    };
   }
   const id = action.kind === "event" ? action.id : review.event?.id;
   const event = id ? await cms.event(id) : undefined;
   const { fittedSizeIn: _fitted, ...reset } = next;
-  return { ...reset, ...(event ? { event } : {}), settings: productionSettings(event) };
+  return { ...reset, ...(event ? { event } : {}), settings: productionSettings() };
 }
 export class CmsEventChanged extends Error {
   constructor() {
@@ -465,7 +509,7 @@ export async function assertCurrentEvent(review: Review, cms: Cms): Promise<void
   if (
     !review.event ||
     JSON.stringify(await cms.event(review.event.id)) !== JSON.stringify(review.event) ||
-    JSON.stringify(productionSettings(review.event)) !== JSON.stringify(review.settings)
+    JSON.stringify(productionSettings()) !== JSON.stringify(review.settings)
   )
     throw new CmsEventChanged();
 }

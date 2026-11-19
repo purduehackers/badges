@@ -6,7 +6,7 @@ import {
   eventSchema,
   personSchema,
   reviewSchema,
-  criteria,
+  criterionSchema,
   targetCountSchema,
   sheetBatchSchema,
 } from "./contracts.ts";
@@ -14,7 +14,7 @@ import { stockItemSchema, stockSelectionSchema } from "./inventory-contracts.ts"
 
 const commonActions = [
   z.strictObject({ kind: z.literal("roles"), badge: z.int().min(0).max(1) }),
-  z.strictObject({ kind: z.literal("replace"), role: z.enum(["badge", "stamp"]) }),
+  z.strictObject({ kind: z.literal("replace"), role: criterionSchema }),
   z.strictObject({ kind: z.literal("event"), id: z.string().min(1).max(128) }),
   z.strictObject({ kind: z.literal("material"), items: stockSelectionSchema.optional() }),
   z.strictObject({ kind: z.literal("quantity"), count: targetCountSchema.optional() }),
@@ -23,14 +23,14 @@ const commonActions = [
   z.strictObject({ kind: z.literal("layout"), id: z.string().regex(/^[a-f0-9]{64}$/u) }),
 
   z.strictObject({
-    kind: z.enum(["publish", "retry", "refresh", "choose-material", "keep-design"]),
+    kind: z.enum(["publish", "retry", "refresh", "choose-material", "keep-design", "skip-stamp"]),
   }),
 ] as const;
 export const actionSchema = z.discriminatedUnion("kind", [
   ...commonActions,
   z.strictObject({
     kind: z.literal("upload"),
-    role: z.enum(criteria),
+    role: criterionSchema,
     file: z
       .strictObject({
         url: z.url(),
@@ -89,3 +89,8 @@ export const workResponse = z.strictObject({
   card: cardSchema.optional(),
   worked: z.boolean().optional(),
 });
+
+export const BADGES_CHANNEL_ID = z
+  .string()
+  .regex(/^\d{17,20}$/u)
+  .parse(process.env.BADGES_CHANNEL_ID || "1418162647005790342");

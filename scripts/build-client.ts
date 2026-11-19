@@ -1,12 +1,5 @@
-const entrypoints = [
-  "src/client.ts",
-  "src/workflow/contracts.ts",
-  "src/workflow/wire.ts",
-  "src/workflow/presentation.ts",
-  "src/workflow/inventory-contracts.ts",
-  "src/workflow/tools.ts",
-  "src/lib/materials.ts",
-];
+import { exports as modules } from "../package.json";
+const entrypoints = [...new Set(Object.values(modules).map((module) => module.types))];
 const result = await Bun.build({
   entrypoints,
   outdir: "dist/client",

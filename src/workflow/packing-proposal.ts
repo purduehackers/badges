@@ -1,13 +1,7 @@
 import { z } from "zod";
-import {
-  badgeSize,
-  contextHash,
-  layoutSchema,
-  remainingCriteria,
-  reviewable,
-  reviewMaterials,
-  sheetBatchSchema,
-} from "./contracts.ts";
+import { layoutSchema, reviewMaterials, sheetBatchSchema } from "./contracts.ts";
+import { badgeSize, contextHash, remainingCriteria, reviewable } from "./review.ts";
+
 import type { Review, SheetBatch } from "./contracts.ts";
 import { pack } from "./packing.ts";
 import { expandSheets, resolveSheets, sheetLabel } from "./sheets.ts";
@@ -20,6 +14,7 @@ export const packingProposalSchema = z.strictObject({
   context: z.string(),
   layout: layoutSchema,
   sheets: sheetBatchSchema,
+  targetCount: z.int().positive().optional(),
 });
 export async function previewPacking(
   review: Review,
@@ -45,11 +40,11 @@ export async function previewPacking(
     );
   const sheets = resolveSheets(selected, reviewMaterials(review));
   const sizes = expandSheets(sheets);
-  await inventory.plan(reviewMaterials(review), sizes);
+  await inventory.plan(reviewMaterials(review), sizes, review);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const result = await pack(
     source,
-    inspectSvg(source, "badge").cut,
+    inspectSvg(source, "badge").cuts,
     { ...review.settings, badgeSizeIn: sizeIn },
     store,
     sizes,
@@ -59,7 +54,13 @@ export async function previewPacking(
   if (!layout) throw new Error("No layout was found at that size.");
   const id = await store.putAsset(
     Buffer.from(
-      JSON.stringify({ reviewId: review.id, context: contextHash(review), layout, sheets }),
+      JSON.stringify({
+        reviewId: review.id,
+        context: contextHash(review),
+        layout,
+        sheets,
+        targetCount: count,
+      }),
     ),
     "application/vnd.badge-packing+json",
   );

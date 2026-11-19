@@ -1,3 +1,5 @@
+import { parseSvg } from "./svg-document";
+
 // Speedy 400 flexx working area; all placement coordinates are millimeters from the back-left.
 export const RUBY_BED = { width: 1016, height: 610 };
 export type BedPoint = { x: number; y: number };
@@ -17,7 +19,7 @@ export function physicalSize(width: string | null, height: string | null): BedSi
 }
 
 export function svgPhysicalSize(svg: string) {
-  const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+  const { root } = parseSvg(svg, true);
   return physicalSize(root.getAttribute("width"), root.getAttribute("height"));
 }
 

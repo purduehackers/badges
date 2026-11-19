@@ -1,11 +1,8 @@
 import { z } from "zod";
-import { badgeTools, badgeToolNameSchema, type BadgeToolName } from "../workflow/tools.ts";
-import {
-  badgeSize,
-  remainingCriteria,
-  staticPassed,
-  reviewMaterials,
-} from "../workflow/contracts.ts";
+import { badgeTools, type BadgeToolName } from "../workflow/tools.ts";
+import { reviewMaterials } from "../workflow/contracts.ts";
+import { badgeSize, designRoles, remainingCriteria, staticPassed } from "../workflow/review.ts";
+
 import type { StoredReview } from "../workflow/contracts.ts";
 import { assertScope, assertControl, type Action, type Actor } from "../workflow/service.ts";
 import {
@@ -18,16 +15,12 @@ import { previewPacking } from "../workflow/packing-proposal.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { cms, attendance } from "./cms.ts";
 import { runtime } from "./runtime.ts";
-import { messagePayloadSchema, DISCORD_GUILD_ID } from "./platform.ts";
+import { DISCORD_GUILD_ID } from "./platform.ts";
+import { messagePayloadSchema, badgeEndpoints } from "../workflow/api.ts";
 import { viewerUrl } from "./viewer.ts";
 import { env } from "./env.ts";
 
-export const contextSchema = z.strictObject({
-  threadId: z.string(),
-  messageId: z.string(),
-  userId: z.string(),
-});
-type Context = z.output<typeof contextSchema>;
+type Context = z.output<typeof badgeEndpoints.status.request>;
 export async function contextFor(input: Context) {
   const { store } = runtime();
   const record = await store.inbox(input.messageId, input.threadId);
@@ -53,6 +46,7 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
   const { review } = stored;
   const step = reviewStep(review);
   const candidates: [BadgeToolName, Action][] = [];
+  if (step === "missing") candidates.push(["skip_stamp", { kind: "skip-stamp" }]);
   if (step === "files")
     candidates.push([
       "identify_files",
@@ -67,12 +61,12 @@ export function availableTools(stored: StoredReview | undefined, actor: Actor): 
   if (["files", "missing", "upload", "fix", "qa", "quantity", "layout", "done"].includes(step))
     candidates.push(["request_replacement", { kind: "upload", role: "badge" }]);
   if (review.pendingRole) candidates.push(["keep_design", { kind: "keep-design" }]);
-  if (["quantity", "layout"].includes(step))
+  if (["quantity", "layout", "done"].includes(step))
     candidates.push(
       ["set_target_quantity", { kind: "quantity", count: 80 }],
       ["select_packing", { kind: "layout", id: "candidate" }],
     );
-  if (["quantity", "layout", "error"].includes(step))
+  if (!review.stockReceipt && ["quantity", "layout", "error"].includes(step))
     candidates.push(["set_sheets", { kind: "sheets" }]);
   if (step === "layout") candidates.push(["publish_batch", { kind: "publish" }]);
   if (step === "error")
@@ -100,7 +94,7 @@ export async function reviewStatus(context: Context) {
   const stock = tools.includes("select_material")
     ? await runtime().inventory.acrylic()
     : tools.includes("set_sheets")
-      ? await runtime().inventory.sheets(reviewMaterials(review))
+      ? await runtime().inventory.acrylic(review.sheetBatch)
       : undefined;
   return {
     tools,
@@ -119,10 +113,12 @@ export async function reviewStatus(context: Context) {
       filename: asset.name,
     })),
     events: step === "event" ? await cms.events() : undefined,
+    stampSkipped: review.stampSkipped ?? false,
     checks: {
       passed: staticPassed(review),
-      badge: verificationChecks(review, "badge"),
-      stamp: verificationChecks(review, "stamp"),
+      ...Object.fromEntries(
+        designRoles(review).map((role) => [role, verificationChecks(review, role)]),
+      ),
     },
     remainingConfirmations: remainingCriteria(review),
     quantity: review.targetCount,
@@ -143,11 +139,7 @@ export async function reviewStatus(context: Context) {
   };
 }
 
-export const toolRequestSchema = contextSchema.extend({
-  name: badgeToolNameSchema,
-  input: z.unknown(),
-});
-export async function executeTool(request: z.output<typeof toolRequestSchema>) {
+export async function executeTool(request: z.output<typeof badgeEndpoints.tool.request>) {
   const { actor, stored } = await contextFor(request);
   if (!availableTools(stored, actor).includes(request.name))
     throw new Error("That action is not available at this step.");
@@ -196,6 +188,9 @@ export async function executeTool(request: z.output<typeof toolRequestSchema>) {
       break;
     case "keep_design":
       action = { kind: "keep-design" };
+      break;
+    case "skip_stamp":
+      action = { kind: "skip-stamp" };
       break;
     case "set_target_quantity":
       action = {

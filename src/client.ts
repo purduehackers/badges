@@ -1,35 +1,28 @@
-import { z } from "zod";
+import { readResponse } from "./lib/http.ts";
+import {
+  badgeEndpoints,
+  type BadgeEndpoint,
+  type BadgeRequest,
+  type BadgeResponse,
+} from "./workflow/api.ts";
+export { BadgeApiError } from "./lib/http.ts";
+export type { BadgeResponse } from "./workflow/api.ts";
 
-export class BadgeApiError extends Error {
-  readonly url: string | undefined;
-  constructor(message: string, url?: string) {
-    super(message);
-    this.url = url;
-  }
-}
-export interface BadgeClient {
-  post<T>(path: string, body: T, timeout?: number): Promise<unknown>;
-}
-export function createBadgeClient(baseUrl: string, secret: string): BadgeClient {
+export type BadgeClient = ReturnType<typeof createBadgeClient>;
+export function createBadgeClient(baseUrl: string, secret: string) {
   return {
-    async post(path, body, timeout = 20_000) {
+    async post<P extends BadgeEndpoint>(
+      path: P,
+      body: BadgeRequest<P>,
+      timeout = 20_000,
+    ): Promise<BadgeResponse<P>> {
       const response = await fetch(new URL(`/badges/${path}`, baseUrl), {
         method: "POST",
         headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(badgeEndpoints[path].request.parse(body)),
         signal: AbortSignal.timeout(timeout),
       });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const problem = z
-          .object({ error: z.string(), url: z.url().optional() })
-          .safeParse(result).data;
-        throw new BadgeApiError(
-          problem?.error ?? `Badge service failed (${response.status}).`,
-          problem?.url,
-        );
-      }
-      return result;
+      return readResponse(response, badgeEndpoints[path].response) as Promise<BadgeResponse<P>>;
     },
   };
 }

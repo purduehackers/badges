@@ -11,13 +11,13 @@ export interface RenderInput {
 
 export interface DesignRenderInput extends RenderInput {
   /** Unmirrored engraving source; black is removed rubber. */
-  stampSvg: string;
+  stampSvg?: string;
   stampSettings?: StampOptions;
 }
 
 declare global {
   interface Window {
-    renderDesigns(input: DesignRenderInput): Promise<{ badge: string; stamp: string }>;
+    renderDesigns(input: DesignRenderInput): Promise<{ badge: string; stamp?: string }>;
     badgeInput: RenderInput;
   }
 }

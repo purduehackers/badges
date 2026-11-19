@@ -1,17 +1,21 @@
 import { messageOf } from "../server/platform.ts";
 
+import { reviewMaterials } from "./contracts.ts";
 import {
   badgeSize,
   contextHash,
+  designRoles,
+  hasDesigns,
   ready,
   remainingCriteria,
   reviewable,
-  reviewMaterials,
   staticPassed,
-} from "./contracts.ts";
+} from "./review.ts";
+
 import type { BadgeMaterial, JobKind, Review } from "./contracts.ts";
 import type { createBadgeInventory } from "./inventory.ts";
-import { physicalDimensions, physicalSvg } from "./manufacturing.ts";
+import { prepareDesign } from "./manufacturing.ts";
+import { STAMP_SIZE_IN } from "./policy.ts";
 import { materialDescription } from "../lib/materials.ts";
 import { pack } from "./packing.ts";
 import { expandSheets, resolveSheets } from "./sheets.ts";
@@ -31,9 +35,9 @@ export interface Publisher {
 }
 export type DesignRenderer = (
   badgeSvg: string,
-  stampSvg: string,
+  stampSvg: string | undefined,
   material: BadgeMaterial,
-) => Promise<{ badge: Uint8Array; stamp: Uint8Array }>;
+) => Promise<{ badge: Uint8Array; stamp?: Uint8Array }>;
 type Inventory = Pick<
   ReturnType<typeof createBadgeInventory>,
   "plan" | "defaultBatch" | "reserve" | "consume" | "release"
@@ -159,7 +163,7 @@ async function arrange(
     !review.settings ||
     !reviewMaterials(review).length
   )
-    throw new Error("Confirm both designs before arranging them.");
+    throw new Error("Confirm the designs before arranging them.");
   await assertCurrentEvent(review, cms);
   const sheetBatch = review.sheetBatch ?? (await inventory?.defaultBatch(reviewMaterials(review)));
   if (!sheetBatch)
@@ -167,11 +171,11 @@ async function arrange(
       "The selected sheets are no longer available. Add stock or choose other sheets.",
     );
   const sheets = expandSheets(resolveSheets(sheetBatch, reviewMaterials(review)));
-  await inventory?.plan(reviewMaterials(review), sheets);
+  await inventory?.plan(reviewMaterials(review), sheets, review);
   const source = (await store.asset(review.badge.hash)).bytes.toString("utf8");
   const { layouts, shortfall } = await pack(
     source,
-    inspectSvg(source, "badge").cut,
+    inspectSvg(source, "badge").cuts,
     { ...review.settings, badgeSizeIn: badgeSize(review) ?? review.settings.badgeSizeIn },
     store,
     sheets,
@@ -183,7 +187,9 @@ async function arrange(
   );
   const selected = shortfall
     ? undefined
-    : layouts.find((layout) => layout.count === review.targetCount);
+    : layouts.find(
+        (layout) => review.targetCount !== undefined && layout.count >= review.targetCount,
+      );
   const {
     selectedLayout: _selected,
     stockPlan: _stock,
@@ -195,7 +201,7 @@ async function arrange(
     return { ...resized, sheetBatch, fittedSizeIn: selected.sizeIn, layouts };
   }
   const stockPlan = selected
-    ? await inventory?.plan(reviewMaterials(review), selected.sheetSizes)
+    ? await inventory?.plan(reviewMaterials(review), selected.sheetSizes, review)
     : undefined;
   return {
     ...base,
@@ -248,7 +254,7 @@ async function prepare(
 ): Promise<Review> {
   if (
     !review.badge ||
-    !review.stamp ||
+    !hasDesigns(review) ||
     !review.settings ||
     !reviewMaterials(review).length ||
     !staticPassed(review)
@@ -257,44 +263,54 @@ async function prepare(
   const material = reviewMaterials(review)[0];
   if (!material) throw new Error("Choose acrylic before preparing the preview.");
   const badgeSource = (await store.asset(review.badge.hash)).bytes.toString("utf8");
-  const stampSource = (await store.asset(review.stamp.hash)).bytes.toString("utf8");
   const sizeIn = badgeSize(review) ?? review.settings.badgeSizeIn;
-  const badge = physicalSvg(badgeSource, "badge", sizeIn, false);
-  const impression = physicalSvg(stampSource, "stamp", 1.5, false);
-  const stamp = physicalSvg(stampSource, "stamp", 1.5, true);
-  const badgeDimensions = physicalDimensions(inspectSvg(badgeSource, "badge").cut, "badge", sizeIn);
-  const stampSize = physicalDimensions(inspectSvg(stampSource, "stamp").cut, "stamp", 1.5);
-  const previews = await renderer(badge, impression, material);
+  const badge = prepareDesign(badgeSource, "badge", sizeIn);
+  const stamp =
+    !review.stampSkipped && review.stamp
+      ? prepareDesign(
+          (await store.asset(review.stamp.hash)).bytes.toString("utf8"),
+          "stamp",
+          STAMP_SIZE_IN,
+        )
+      : undefined;
+  const previews = await renderer(badge.previewSvg, stamp?.previewSvg, material);
+  if (stamp && !previews.stamp) throw new Error("The stamp preview is missing.");
   return {
     ...review,
     manufacturing: {
-      badge: await store.putAsset(Buffer.from(badge), "image/svg+xml"),
-      stamp: await store.putAsset(Buffer.from(stamp), "image/svg+xml"),
-      badgePreview: await store.putAsset(renderSvg(badge), "image/png"),
+      badge: await store.putAsset(Buffer.from(badge.svg), "image/svg+xml"),
+      badgePreview: await store.putAsset(renderSvg(badge.svg), "image/png"),
       badge3d: {
         preview: await store.putAsset(previews.badge, "image/png"),
         material: materialDescription(material),
         ...material,
       },
-      stampPreview: await store.putAsset(previews.stamp, "image/png"),
-      badgeWidthIn: badgeDimensions.widthIn,
-      badgeHeightIn: badgeDimensions.heightIn,
-      stampWidthIn: stampSize.widthIn,
-      stampHeightIn: stampSize.heightIn,
+      badgeWidthIn: badge.widthIn,
+      badgeHeightIn: badge.heightIn,
+      ...(stamp && previews.stamp
+        ? {
+            stamp: await store.putAsset(Buffer.from(stamp.svg), "image/svg+xml"),
+            stampPreview: await store.putAsset(previews.stamp, "image/png"),
+            stampWidthIn: stamp.widthIn,
+            stampHeightIn: stamp.heightIn,
+          }
+        : {}),
     },
   };
 }
 async function inspect(review: Review, store: BadgeStore): Promise<Review> {
-  if (!review.badge || !review.stamp || !review.rolesConfirmed)
-    throw new Error("Identify the badge and stamp first.");
-  const badge = inspectSvg((await store.asset(review.badge.hash)).bytes.toString("utf8"), "badge");
-  const stamp = inspectSvg((await store.asset(review.stamp.hash)).bytes.toString("utf8"), "stamp");
+  if (!hasDesigns(review) || !review.rolesConfirmed) throw new Error("Identify the designs first.");
+  const designs = await Promise.all(
+    designRoles(review).map(async (role) =>
+      inspectSvg((await store.asset(review[role]!.hash)).bytes.toString("utf8"), role),
+    ),
+  );
   const previews = await Promise.all(
-    [badge.source, stamp.source].map((source) => store.putAsset(renderSvg(source), "image/png")),
+    designs.map(({ source }) => store.putAsset(renderSvg(source), "image/png")),
   );
   return {
     ...review,
-    checks: [...badge.checks, ...stamp.checks],
+    checks: designs.flatMap(({ checks }) => checks),
     previews,
   };
 }

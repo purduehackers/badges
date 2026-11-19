@@ -21,6 +21,7 @@ Run these commands from the repository root. The `postinstall` script builds the
 | `bun run start:service` | Serve the built badge API, default port `30588`   |
 | `bun run typecheck`     | Check TypeScript                                  |
 | `bun run lint`          | Run lint with warnings denied                     |
+| `bun test`              | Check shared API, SVG, and manufacturing behavior |
 | `bunx oxfmt --check .`  | Check formatting                                  |
 
 Vercel runs the Next.js routes on Bun. The standalone Bun server is also available for local development. Both entry points use the same request handler. Linux rendering uses bundled Chromium; macOS needs an installed Chromium executable. Wack Hacker calls `/badges/work` after an interaction and once per minute to recover unfinished jobs.
@@ -29,18 +30,18 @@ Vercel runs the Next.js routes on Bun. The standalone Bun server is also availab
 
 Set these values in the badge service environment. Keep the API secret identical in the service, Wack Hacker bot, and badge Eve agent.
 
-| Variable                                                                | Purpose                                                     |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `BADGES_API_SECRET`                                                     | Shared authentication secret, at least 32 characters        |
-| `BADGES_PUBLIC_URL`                                                     | Public service origin for signed 3D preview links           |
-| `TURSO_DATABASE_URL`                                                    | Badge database URL; local development also accepts `file:`  |
-| `TURSO_AUTH_TOKEN`                                                      | Turso authentication token when required                    |
-| `PAYLOAD_CMS_API_KEY`                                                   | Read event details and RSVP counts                          |
-| `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID` | GitHub App access to `purduehackers/badge-designs`          |
-| `VERCEL_API_TOKEN`                                                      | Publish badge redirects for the configured phack.rs project |
-| `PORT`                                                                  | Service port, default `30588`                               |
-| `BADGES_CHANNEL_ID`                                                     | Optional Discord channel override for local testing         |
-| `BADGE_CHROMIUM_EXECUTABLE_PATH`                                        | Local Chromium executable, required on macOS                |
+| Variable                                                                | Purpose                                                    |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `BADGES_API_SECRET`                                                     | Shared authentication secret, at least 32 characters       |
+| `BADGES_PUBLIC_URL`                                                     | Public service origin for signed 3D preview links          |
+| `TURSO_DATABASE_URL`                                                    | Badge database URL; local development also accepts `file:` |
+| `TURSO_AUTH_TOKEN`                                                      | Turso authentication token when required                   |
+| `PAYLOAD_CMS_API_KEY`                                                   | Read event details and RSVP counts                         |
+| `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID` | GitHub App access to `purduehackers/badge-designs`         |
+| `PHACK_TOKEN`                                                           | Create badge shortlinks through the phack.rs API           |
+| `PORT`                                                                  | Service port, default `30588`                              |
+| `BADGES_CHANNEL_ID`                                                     | Optional Discord channel override for local testing        |
+| `BADGE_CHROMIUM_EXECUTABLE_PATH`                                        | Local Chromium executable, required on macOS               |
 
 Wack Hacker also needs `BADGES_API_URL` and `BADGE_AGENT_URL`. Those two URLs enable the feature together. The bot also needs `AI_GATEWAY_API_KEY` for initial Luna routing. `BADGES_API_URL` points to this service; `BADGE_AGENT_URL` points to Eve. Set the same `BADGES_CHANNEL_ID` override in all three processes when testing outside #p-badges.
 
@@ -70,3 +71,5 @@ Every `POST /badges/*` endpoint requires the shared bearer secret. `GET /badges/
 | `work`, `ack`        | Bot: process a job, deliver the current card, and record its receipt |
 
 Wack Hacker imports the client, contracts, presentation helpers, and tool schemas from this repository at a pinned Git commit. It does not import the renderer, database, or worker. The package install builds those client exports because Eve’s Node.js loader cannot execute TypeScript dependencies from `node_modules`.
+
+`src/workflow/api.ts` defines the service request and response schemas. `createBadgeClient().post()` derives its request and return types from those schemas and validates the wire response once. Bot and agent callers use that result directly. Change a contract here, rebuild the package, and update both Wack Hacker dependency pins together.

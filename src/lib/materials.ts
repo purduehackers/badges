@@ -1,3 +1,6 @@
+import type { MeshPhysicalMaterialParameters } from "three";
+import { ACRYLIC_THICKNESS_MM } from "../workflow/policy";
+
 // Acrylic presets from purduehackers/badges, commit 8598f7513f993f30389470c85b88427db46256f1.
 export type MaterialType = "transparent" | "opaque" | "translucent" | "pearlescent";
 
@@ -11,82 +14,50 @@ export interface AcrylicMaterial {
   engraveColor: string;
 }
 
-export interface MaterialPhysicalProps {
-  roughness: number;
-  clearcoat: number;
-  clearcoatRoughness: number;
-  transparent: boolean;
-  opacity: number;
-  transmission: number;
-  envMapIntensity: number;
-  sheen: number;
-  sheenRoughness: number;
-  sheenColor?: string;
-}
-
-export interface MaterialTypeConfig {
-  label: string;
-  order: number;
-  physical: MaterialPhysicalProps;
-}
-
-export const MATERIAL_TYPE_CONFIGS: Record<MaterialType, MaterialTypeConfig> = {
+export const MATERIAL_TYPE_CONFIGS: Record<
+  MaterialType,
+  { label: string; physical: MeshPhysicalMaterialParameters & { roughness: number } }
+> = {
   transparent: {
     label: "Transparent",
-    order: 0,
     physical: {
       roughness: 0.05,
       clearcoat: 0.8,
       clearcoatRoughness: 0.05,
-      transparent: true,
-      opacity: 0.6,
       transmission: 0.85,
-      envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
     },
   },
   opaque: {
     label: "Opaque",
-    order: 1,
     physical: {
       roughness: 0.1,
       clearcoat: 0.8,
       clearcoatRoughness: 0.05,
-      transparent: false,
-      opacity: 1,
       transmission: 0,
-      envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
     },
   },
   translucent: {
     label: "Translucent",
-    order: 2,
     physical: {
       roughness: 0.1,
       clearcoat: 0.8,
       clearcoatRoughness: 0.05,
-      transparent: true,
-      opacity: 0.93,
       transmission: 0.15,
-      envMapIntensity: 0.3,
       sheen: 0,
       sheenRoughness: 0,
     },
   },
   pearlescent: {
     label: "Pearlescent",
-    order: 3,
     physical: {
       roughness: 0.45,
       clearcoat: 0.15,
       clearcoatRoughness: 0.3,
-      transparent: false,
-      opacity: 1,
       transmission: 0,
-      envMapIntensity: 0,
       sheen: 0.08,
       sheenRoughness: 0.25,
       sheenColor: "#ffffff",
@@ -400,7 +371,9 @@ export function materialDescription(selection: {
 }
 
 export function thicknessLabel(thicknessMm: number): string {
-  return Math.abs(thicknessMm - 3.175) < Number.EPSILON ? "⅛ in" : `${thicknessMm} mm`;
+  return Math.abs(thicknessMm - ACRYLIC_THICKNESS_MM) < Number.EPSILON
+    ? "⅛ in"
+    : `${thicknessMm} mm`;
 }
 
 export const DEFAULT_MATERIAL_ID = "transparent-light-blue";

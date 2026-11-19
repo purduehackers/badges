@@ -8,6 +8,7 @@ export default async function nextConfig(): Promise<NextConfig> {
     compiler: { defineServer: await rendererSources() },
     serverExternalPackages: ["@sparticuz/chromium", "@resvg/resvg-js", "puppeteer-core"],
     outputFileTracingIncludes: {
+      "/api/designs": ["./src/server/fonts/*"],
       "/badges/*": ["./node_modules/@sparticuz/chromium/bin/**/*", "./src/server/fonts/*"],
     },
   };

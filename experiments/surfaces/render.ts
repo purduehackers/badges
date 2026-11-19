@@ -57,6 +57,7 @@ for (const run of runs) {
     material: getMaterial(run.material),
     stampSettings: run.settings,
   });
+  if (!result.stamp) throw new Error("The stamp experiment did not render a stamp.");
   await Bun.write(`${output}/stamp-${run.name}.png`, result.stamp);
   await Bun.write(`${output}/badge-${run.material}.png`, result.badge);
   const durationMs = Math.round(performance.now() - start);

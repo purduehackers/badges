@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { readRubyJson, redact, rubyOrigin } from "./ruby-diagnostics";
-import { physicalSize } from "./ruby-bed";
+import { readRubyJson, redact, rubyOrigin, rubyRequest } from "./ruby-transport";
 
 export const connectionSchema = z.object({
   baseUrl: z.string(),
@@ -15,7 +14,6 @@ export const RUBY_PROFILE_NAMES = {
   badge: "Purdue Hackers Badges",
   stamp: "Purdue Hackers Stamps",
 } as const;
-export type RubyFileKind = keyof typeof RUBY_PROFILE_NAMES;
 const rubyProfile = z.object({
   id: z.uuid(),
   name: z.string().nullish(),
@@ -138,30 +136,12 @@ export function rubyClient(input: RubyConnection) {
       return import("./ruby-simulator").then(({ simulationRequest }) =>
         simulationRequest(connection, path, body),
       );
-    return fetch(`${baseUrl}/api/OpenApi/${path}`, {
-      method: body ? "POST" : "GET",
-      body,
-      headers: {
-        Accept: "application/json",
-        Authorization: `PersonalAccessToken ${token}`,
-        "x-api-version": "1.0-OpenApi",
-        "x-target-device": targetDevice,
-        ...(typeof body === "string" ? { "Content-Type": "application/json" } : {}),
-      },
-      mode: "cors",
-      credentials: "omit",
-      redirect: "error",
-      cache: "no-store",
-      referrerPolicy: "no-referrer",
-      signal: AbortSignal.timeout(body ? 60_000 : 15_000),
-    });
+    return rubyRequest(connection, `/api/OpenApi/${path}`, body);
   }
 
   async function failure(response: Response) {
     const data = await readRubyJson(response).catch(() => undefined);
     const code = z.object({ code: z.string() }).safeParse(data);
-    if (code.success && code.data.code === "SIMULATED_UPLOAD_REJECTED")
-      return "The simulator rejected this upload. Check the queue to retry.";
     if (code.success && code.data.code === "ERR_IMPORTPROFILE_002")
       return "Ruby rejected the import profile. Check that it still exists in Ruby, then try again.";
     return response.status === 401 || response.status === 403
@@ -176,7 +156,7 @@ export function rubyClient(input: RubyConnection) {
     } catch {
       throw new Error(
         connection.simulated
-          ? "The simulated laser is disconnected. Turn off “Connection lost” to reconnect."
+          ? "The simulated laser has changed. Connect again."
           : "Could not reach Ruby. Check its certificate, local-network access, and API address.",
       );
     }
@@ -236,40 +216,6 @@ export function rubyClient(input: RubyConnection) {
         };
       }
     },
-  };
-}
-
-export async function prepareSvg(file: File) {
-  if (!/\.svg$/i.test(file.name)) throw new Error(`${file.name}: choose an SVG cutting file.`);
-  const bytes = await file.arrayBuffer();
-  const text = new TextDecoder().decode(bytes);
-  const document = new DOMParser().parseFromString(text, "image/svg+xml");
-  const svg = document.documentElement;
-  if (svg.localName !== "svg" || document.querySelector("parsererror"))
-    throw new Error(`${file.name}: this is not a valid SVG.`);
-  if (/<!DOCTYPE/i.test(text) || document.querySelector("script, foreignObject"))
-    throw new Error(`${file.name}: remove scripts and embedded HTML before uploading.`);
-  for (const element of [svg, ...svg.querySelectorAll("*")]) {
-    for (const attribute of element.attributes) {
-      if (
-        /^on/i.test(attribute.name) ||
-        (/href$/i.test(attribute.name) && !attribute.value.startsWith("#"))
-      )
-        throw new Error(`${file.name}: remove linked content or scripts before uploading.`);
-    }
-  }
-  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
-  const size = physicalSize(svg.getAttribute("width"), svg.getAttribute("height"));
-  return {
-    file,
-    digest,
-    svg: text,
-    kind: (/(?:^|-)stamp\.svg$/i.test(file.name) ? "stamp" : "badge") as RubyFileKind,
-    dimensions: size
-      ? `${Number((size.width / 25.4).toFixed(2))} × ${Number((size.height / 25.4).toFixed(2))} in`
-      : "Size not specified. Check in Ruby.",
   };
 }
 

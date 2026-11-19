@@ -1,4 +1,4 @@
-import type { MessagePayload } from "../server/platform.ts";
+import type { MessagePayload } from "./api.ts";
 
 import type { BadgeEvent, Criterion, Review } from "./contracts.ts";
 import { fixRole, reviewStep } from "./presentation.ts";
@@ -23,7 +23,7 @@ export function singleRole(text: string, previous?: Review): Criterion | undefin
   if (!previous) return undefined;
   if (previous.pendingRole) return previous.pendingRole;
   if (reviewStep(previous) === "fix") return fixRole(previous);
-  if (previous.badge && !previous.stamp) return "stamp";
+  if (previous.badge && !previous.stamp && !previous.stampSkipped) return "stamp";
   if (previous.stamp && !previous.badge) return "badge";
   return undefined;
 }

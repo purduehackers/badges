@@ -35,11 +35,19 @@
     "./tools": {
       "types": "./src/workflow/tools.ts",
       "default": "./dist/client/tools.js"
+    },
+    "./review": {
+      "types": "./src/workflow/review.ts",
+      "default": "./dist/client/review.js"
+    },
+    "./sheets": {
+      "types": "./src/workflow/sheets.ts",
+      "default": "./dist/client/sheets.js"
     }
   },
   "scripts": {
-    "dev": "bun run --bun next dev",
-    "build": "bun run build:service && bun run --bun next build",
+    "dev": "bun run --bun next dev --webpack",
+    "build": "bun run build:service && bun run --bun next build --webpack",
     "start": "bun run --bun next start",
     "lint": "oxlint --type-aware --deny-warnings",
     "format": "oxfmt",
@@ -52,8 +60,10 @@
   "dependencies": {
     "@libsql/client": "0.17.4",
     "@octokit/auth-app": "8.2.0",
+    "@purduehackers/phack-cli": "0.2.0",
     "@resvg/resvg-js": "2.6.2",
     "@sparticuz/chromium": "153.0.0",
+    "@types/three": "0.183.1",
     "@xmldom/xmldom": "0.9.12",
     "clipper-lib": "6.4.2",
     "drizzle-orm": "0.45.2",
@@ -63,7 +73,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "svgpath": "2.6.0",
-    "three": "^0.183.2",
+    "three": "0.183.2",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -73,7 +83,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.183.1",
     "babel-plugin-react-compiler": "1.0.0",
     "oxfmt": "^0.35.0",
     "oxlint": "^1.50.0",

@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { digestSchema, targetCountSchema, sheetBatchSchema } from "./contracts.ts";
+import {
+  badgeSizeSchema,
+  criterionSchema,
+  digestSchema,
+  targetCountSchema,
+  sheetBatchSchema,
+} from "./contracts.ts";
 import { inventoryActionSchema, stockSelectionSchema } from "./inventory-contracts.ts";
 
 const current = { version: z.int().nonnegative() };
@@ -24,15 +30,20 @@ export const badgeTools = {
   },
   confirm_design: {
     description:
-      "Record the designer's explicit confirmation of both current designs after human QA. A question never confirms a design.",
+      "Record the designer's explicit confirmation of every current design after human QA. A question never confirms a design.",
     schema: z.strictObject(current),
   },
   request_replacement: {
     description: "Ask the designer to upload a replacement badge or stamp SVG.",
-    schema: z.strictObject({ ...current, design: z.enum(["badge", "stamp"]) }),
+    schema: z.strictObject({ ...current, design: criterionSchema }),
   },
   keep_design: {
     description: "Cancel the designer's pending replacement upload.",
+    schema: z.strictObject(current),
+  },
+  skip_stamp: {
+    description:
+      "Continue with only the badge when the designer explicitly says there is no stamp.",
     schema: z.strictObject(current),
   },
   estimate_attendance: {
@@ -53,7 +64,7 @@ export const badgeTools = {
     description:
       "Calculate capacity at a proposed size without changing the review. Use for what-if questions such as how many badges fit at 3 inches. Results are feasible layouts, not proven optima.",
     schema: z.strictObject({
-      sizeIn: z.number().min(1.8).max(10),
+      sizeIn: badgeSizeSchema,
       count: targetCountSchema.optional(),
       sheets: sheetBatchSchema.optional(),
     }),

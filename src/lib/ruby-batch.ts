@@ -1,8 +1,12 @@
+import { browserStore } from "./browser-store";
+import { parseSvg } from "./svg-document";
+import { physicalSize } from "./ruby-bed";
+import { ACRYLIC_THICKNESS_MM, STAMP_THICKNESS_MM } from "../workflow/policy";
+import type { Criterion } from "../workflow/contracts";
 import { z } from "zod";
 import { materialDescription, stockMaterial } from "./materials";
 import {
   duplicateImport,
-  prepareSvg,
   rubyClient,
   RUBY_PROFILE_NAMES,
   type RubyReceipt,
@@ -17,32 +21,53 @@ export const releaseSchema = z.array(
   }),
 );
 export type Release = z.infer<typeof releaseSchema>[number];
-export type ProductionFile = Awaited<ReturnType<typeof prepareSvg>> & {
+export interface ProductionFile {
+  file: File;
+  digest: string;
+  svg: string;
+  kind: Criterion;
+  dimensions: string;
   batchId?: string;
   version?: string;
   previewSvg?: string;
   materialId?: string;
   thicknessMm: number;
   mirrored: boolean;
-};
+}
 
 export function materialSummary(file: ProductionFile) {
-  if (file.kind === "stamp") return "Stamp rubber · 2.3 mm";
+  if (file.kind === "stamp") return `Stamp rubber · ${STAMP_THICKNESS_MM} mm`;
   return file.materialId
     ? materialDescription({ materialId: file.materialId, thicknessMm: file.thicknessMm })
     : "Choose acrylic";
 }
 
 export async function productionFile(file: File, version?: string): Promise<ProductionFile> {
-  const prepared = await prepareSvg(file);
+  if (!/\.svg$/i.test(file.name)) throw new Error(`${file.name}: choose an SVG cutting file.`);
+  const bytes = await file.arrayBuffer();
+  const text = new TextDecoder().decode(bytes);
+  const { root: svg } = parseSvg(text, true);
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  const size = physicalSize(svg.getAttribute("width"), svg.getAttribute("height"));
   const material =
     /\d+(?:\.\d+)?x\d+(?:\.\d+)?-([a-z][a-z-]+)-(\d+(?:\.\d+)?)mm(?:-\d+)?\.svg$/i.exec(file.name);
+  const kind = /(?:^|-)stamp\.svg$/i.test(file.name) ? "stamp" : "badge";
+  let thicknessMm = material ? Number(material[2]) : ACRYLIC_THICKNESS_MM;
+  if (kind === "stamp") thicknessMm = STAMP_THICKNESS_MM;
   return {
-    ...prepared,
     version,
     materialId: material && stockMaterial(material[1]) ? material[1] : undefined,
-    thicknessMm: material ? Number(material[2]) : 3.175,
-    mirrored: prepared.kind === "stamp",
+    thicknessMm,
+    mirrored: kind === "stamp",
+    file,
+    digest,
+    svg: text,
+    kind,
+    dimensions: size
+      ? `${Number((size.width / 25.4).toFixed(2))} × ${Number((size.height / 25.4).toFixed(2))} in`
+      : "Size not specified. Check in Ruby.",
   };
 }
 
@@ -68,30 +93,12 @@ export async function loadRelease(release: Release) {
   return files.map((file) => ({ ...file, previewSvg: file.kind === "badge" ? badge : undefined }));
 }
 
-// IndexedDB preserves uploaded SVGs across reloads without filling localStorage.
+const batchStore = browserStore("ruby-production", "batch");
 export async function savedBatch(
   files?: ProductionFile[],
   key = "current",
 ): Promise<ProductionFile[]> {
-  const database = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open("ruby-production", 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("batch");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(new Error("Allow browser storage to remember this batch."));
-  });
-  try {
-    return await new Promise((resolve, reject) => {
-      const transaction = database.transaction("batch", files ? "readwrite" : "readonly");
-      const store = transaction.objectStore("batch");
-      const request = files ? store.put(files, key) : store.get(key);
-      transaction.oncomplete = () =>
-        resolve((request.result && !files ? request.result : files) ?? []);
-      transaction.onerror = () => reject(new Error("Could not save this batch on this computer."));
-      transaction.onabort = () => reject(new Error("Could not save this batch on this computer."));
-    });
-  } finally {
-    database.close();
-  }
+  return (await batchStore(files, key)) ?? [];
 }
 
 type Client = ReturnType<typeof rubyClient>;
@@ -101,16 +108,12 @@ export async function reconcileJob(
   save: (receipt: RubyReceipt) => void,
   active: () => boolean,
 ) {
-  const [tracked, queue] = await Promise.all([client.jobs(receipt.id), client.queue()]);
-  const jobs = tracked.length
-    ? tracked
-    : queue.filter((job) => job.trackingNumber === receipt.id || receipt.jobIds?.includes(job.id));
-  if (jobs.length) {
+  function queued(jobs: RubyReceipt["jobs"]) {
     const next = {
       ...receipt,
       state: "submitted" as const,
       jobs,
-      jobIds: jobs.map((job) => job.id),
+      jobIds: jobs?.map((job) => job.id),
       queuedAt: receipt.queuedAt ?? new Date().toISOString(),
       queueError: undefined,
       detail: "Queued in Ruby.",
@@ -118,6 +121,11 @@ export async function reconcileJob(
     save(next);
     return next;
   }
+  const [tracked, queue] = await Promise.all([client.jobs(receipt.id), client.queue()]);
+  const jobs = tracked.length
+    ? tracked
+    : queue.filter((job) => job.trackingNumber === receipt.id || receipt.jobIds?.includes(job.id));
+  if (jobs.length) return queued(jobs);
   if (receipt.queueError) throw new Error(receipt.queueError);
   if (receipt.queueAttemptedAt) return receipt;
   // Give the import profile time to finish its own queue action first.
@@ -135,18 +143,7 @@ export async function reconcileJob(
     (job) =>
       matching.some((workbench) => workbench.id === job.id) || job.trackingNumber === receipt.id,
   );
-  if (existing.length) {
-    const next = {
-      ...receipt,
-      state: "submitted" as const,
-      jobs: existing,
-      jobIds: existing.map((job) => job.id),
-      queuedAt: new Date().toISOString(),
-      detail: "Queued in Ruby.",
-    };
-    save(next);
-    return next;
-  }
+  if (existing.length) return queued(existing);
   const next = {
     ...receipt,
     jobIds: matching.map((job) => job.id),
@@ -174,7 +171,11 @@ export async function queueBatch(
   save: (receipt: RubyReceipt) => void,
   active: () => boolean,
 ) {
-  if (files.some((file) => file.kind === "badge" && Math.abs(file.thicknessMm - 3.175) > 0.001))
+  if (
+    files.some(
+      (file) => file.kind === "badge" && Math.abs(file.thicknessMm - ACRYLIC_THICKNESS_MM) > 0.001,
+    )
+  )
     throw new Error(
       "The Ruby badge profile uses ⅛-inch acrylic. Choose cutting files for that thickness.",
     );

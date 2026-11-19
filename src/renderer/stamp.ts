@@ -1,4 +1,6 @@
 import { canvas2d, readArtwork } from "./artwork.ts";
+import { mirrorSvg } from "../lib/svg-document.ts";
+import { STAMP_SIZE_IN } from "../workflow/policy.ts";
 
 export interface StampOptions {
   ink: number;
@@ -39,12 +41,13 @@ function noise(x: number, y: number, seed: number) {
 /** An appearance model of ink transfer, not a calibrated rubber/contact solver. */
 export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
   const artwork = await readArtwork(svg);
-  const points = artwork.shapes[0]!.getPoints(512);
+  const contours = artwork.shapes.map((shape) => shape.getPoints(512));
+  const points = contours.flat();
   const minX = Math.min(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const cutWidth = Math.max(...points.map((point) => point.x)) - minX;
   const cutHeight = Math.max(...points.map((point) => point.y)) - minY;
-  const mmPerUnit = 38.1 / Math.min(cutWidth, cutHeight);
+  const mmPerUnit = (STAMP_SIZE_IN * 25.4) / Math.min(cutWidth, cutHeight);
   const widthMm = cutWidth * mmPerUnit,
     heightMm = cutHeight * mmPerUnit;
   const pixelsPerMm = 800 / (Math.max(widthMm, heightMm) + 12);
@@ -55,11 +58,13 @@ export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
   const shape = canvas2d(width, height);
   shape.context.setTransform(scale, 0, 0, scale, margin - minX * scale, margin - minY * scale);
   shape.context.beginPath();
-  for (const [index, point] of points.entries()) {
-    if (index === 0) shape.context.moveTo(point.x, point.y);
-    else shape.context.lineTo(point.x, point.y);
+  for (const contour of contours) {
+    for (const [index, point] of contour.entries()) {
+      if (index === 0) shape.context.moveTo(point.x, point.y);
+      else shape.context.lineTo(point.x, point.y);
+    }
+    shape.context.closePath();
   }
-  shape.context.closePath();
   shape.context.fill();
   const silhouette = shape.context.getImageData(0, 0, width, height).data;
   const removal = canvas2d(width, height);
@@ -133,4 +138,17 @@ export async function createStamp(svg: string, paperImage?: HTMLImageElement) {
     return { canvas: result.canvas, coverage: deposited / retained.length };
   }
   return { render, widthMm, heightMm };
+}
+
+export async function renderStamp(
+  svg: string,
+  paperUrl: string,
+  mirrored = false,
+  settings = DEFAULT_STAMP,
+) {
+  const paper = new Image();
+  paper.src = paperUrl;
+  await paper.decode();
+  const stamp = await createStamp(mirrored ? mirrorSvg(svg) : svg, paper);
+  return stamp.render(settings).canvas;
 }

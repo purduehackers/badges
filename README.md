@@ -9,6 +9,7 @@ Preview your badge in acrylic, check your files, and prepare cutting sheets. Thi
 
 Use these pages to understand or run the project:
 
+- **Website**: [Upload, review, and arrange designs](docs/website.md)
 - **Workflow**: [Understand the designer and manufacturer steps](docs/workflow.md)
 - **Service setup**: [Configure the badge service](docs/service.md)
 - **Saved assets**: [Download published badge designs](https://github.com/purduehackers/badge-designs)
