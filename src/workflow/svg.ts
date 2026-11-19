@@ -428,7 +428,7 @@ export function renderSvg(source: string): Uint8Array {
   const { root } = parseSvg(source);
   const box = (root.getAttribute("viewBox") ?? "").split(/[\s,]+/u).map(Number);
   const mode = (box[2] ?? 1) >= (box[3] ?? 1) ? "width" : "height";
-  return new Resvg(source, {
+  return new Resvg(new XMLSerializer().serializeToString(root), {
     background: "white",
     fitTo: { mode, value: 1024 },
     font: { loadSystemFonts: false },

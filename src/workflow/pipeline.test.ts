@@ -3,7 +3,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { parseSvg, mirrorSvg } from "../lib/svg-document.ts";
 import { packingInput, designLayoutSchema } from "../lib/designs.ts";
 import { productionFile } from "../lib/ruby-batch.ts";
-import { inspectSvg } from "./svg.ts";
+import { inspectSvg, renderSvg } from "./svg.ts";
 import { prepareDesign, physicalDimensions } from "./manufacturing.ts";
 import { pack } from "./packing.ts";
 import { productionSettings, STAMP_SIZE_IN, STAMP_THICKNESS_MM } from "./policy.ts";
@@ -24,6 +24,45 @@ test("thin red outlines pass the same checks used by website and worker", () => 
     const result = inspectSvg(design, role);
     expect(result.checks.every((check) => check.status === "pass")).toBe(true);
     expect(result.cuts).toHaveLength(1);
+  }
+});
+
+test("standard SVG doctypes do not change inspection, rendering, or manufacturing exports", () => {
+  const plain = inspectSvg(design, "badge");
+  for (const declaration of [
+    '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">',
+    "<!DOCTYPE svg\nPUBLIC '-//W3C//DTD SVG 1.1//EN' 'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd'>",
+    '<!DOCTYPE svg SYSTEM "https://example.invalid/svg.dtd">',
+    "<!DOCTYPE svg>",
+  ]) {
+    const source = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>${declaration}${design}`;
+    const result = inspectSvg(source, "badge");
+    expect(result.checks.every((check) => check.status === "pass")).toBe(true);
+    expect(result.source).toBe(plain.source);
+    expect(result.cuts).toEqual(plain.cuts);
+    expect(renderSvg(source)).toEqual(renderSvg(design));
+    for (const role of ["badge", "stamp"] as const) {
+      const size = role === "stamp" ? STAMP_SIZE_IN : 2.5;
+      expect(prepareDesign(source, role, size)).toEqual(prepareDesign(design, role, size));
+    }
+  }
+});
+
+test("SVG export headers cannot introduce entities or other XML directives", () => {
+  for (const directive of [
+    '<!DOCTYPE svg [<!ENTITY external SYSTEM "file:///etc/passwd">]>',
+    '<!DOCTYPE svg [<!ENTITY local "artwork">]>',
+    '<!DOCTYPE svg SYSTEM "https://example.invalid/svg.dtd" []>',
+    '<!ENTITY external SYSTEM "https://example.invalid/artwork">',
+    '<!DOCTYPE html SYSTEM "https://example.invalid/html.dtd">',
+    '<!DOCTYPE svg PUBLIC "missing-system-identifier">',
+    "<!DOCTYPE svg><!DOCTYPE svg>",
+    '<?xml-stylesheet href="https://example.invalid/style.css"?>',
+  ]) {
+    const source = `${directive}${design}`;
+    expect(() => parseSvg(source)).toThrow();
+    expect(() => parseSvg(source, true)).toThrow();
+    expect(() => renderSvg(source)).toThrow();
   }
 });
 

@@ -4,7 +4,13 @@ import type { Element } from "@xmldom/xmldom";
 export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 export function parseSvg(input: string, allowReuse = false) {
-  const source = input.replace(/^\s*<\?xml\s[^?]*\?>/u, "");
+  const source = input
+    .replace(/^\s*<\?xml\s[^?]*\?>/u, "")
+    // Discard export metadata without loading a DTD or accepting internal entity declarations.
+    .replace(
+      /^\s*<!DOCTYPE\s+svg(?:\s+(?:PUBLIC\s+(?:"[^"]*"|'[^']*')\s+|SYSTEM\s+)(?:"[^"]*"|'[^']*'))?\s*>/u,
+      "",
+    );
   if (/<!DOCTYPE|<!ENTITY|<\?/iu.test(source)) {
     throw new Error("Export a plain SVG without XML directives or entities.");
   }
