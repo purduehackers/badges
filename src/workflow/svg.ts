@@ -197,6 +197,7 @@ export interface SvgFacts {
 }
 
 interface Observations {
+  role: Check["role"];
   unknown: Set<string>;
   palette: Set<string>;
   text: number;
@@ -373,6 +374,7 @@ function checkCut(observation: Observations): Pick<Check, "status" | "detail"> {
 export function inspectSvg(source: string, role: "badge" | "stamp"): SvgFacts {
   const { root } = parseSvg(source);
   const observation: Observations = {
+    role,
     unknown: new Set(),
     palette: new Set(),
     text: 0,
@@ -445,6 +447,16 @@ function inspectVisibility(
   // Invisible or reusable artwork cannot establish visible manufacturing evidence.
   for (const key of ["opacity", "fill-opacity", "stroke-opacity"]) {
     const value = local.get(key);
+    // Fill alpha changes grayscale engraving; it does not change the cutting stroke.
+    if (
+      key === "fill-opacity" &&
+      observations.role === "badge" &&
+      value &&
+      /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?%?$/iu.test(value)
+    ) {
+      const alpha = Number(value.replace(/%$/u, "")) / (value.endsWith("%") ? 100 : 1);
+      if (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) continue;
+    }
     if (value !== undefined && !["1", "100%", "inherit"].includes(value))
       observations.unknown.add(`non-opaque ${key}`);
   }

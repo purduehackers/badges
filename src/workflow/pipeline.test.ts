@@ -27,6 +27,41 @@ test("thin red outlines pass the same checks used by website and worker", () => 
   }
 });
 
+test("badge engraving supports fill opacity while preserving stamp and cutting checks", () => {
+  for (const alpha of ["0", "0.06", ".5", "99%", "1", "5e-1"]) {
+    const source = design.replace(
+      'width="20" height="40"',
+      `width="20" height="40" fill-opacity="${alpha}"`,
+    );
+    const result = inspectSvg(source, "badge");
+    expect(result.checks.every((check) => check.status === "pass")).toBe(true);
+    expect(result.source).toContain(`fill-opacity="${alpha}"`);
+    expect(prepareDesign(source, "badge", 2.2).svg).toContain(`fill-opacity="${alpha}"`);
+    if (alpha !== "1")
+      expect(
+        inspectSvg(source, "stamp").checks.find((check) => check.id === "supported")?.status,
+      ).toBe("unknown");
+  }
+  for (const attributes of [
+    'fill-opacity="invalid"',
+    'fill-opacity="2"',
+    'fill-opacity="-0.1"',
+    'fill-opacity="0x1"',
+    'opacity="0.5"',
+    'stroke-opacity="0.5"',
+  ]) {
+    const source = design.replace('fill="black"', `fill="black" ${attributes}`);
+    expect(inspectSvg(source, "badge").checks.some((check) => check.status !== "pass")).toBe(true);
+  }
+  const redFill = design.replace(
+    'width="20" height="40"',
+    'width="20" height="40" fill="red" fill-opacity=".5"',
+  );
+  expect(inspectSvg(redFill, "badge").checks.find((check) => check.id === "fills")?.status).toBe(
+    "fail",
+  );
+});
+
 test("standard SVG doctypes do not change inspection, rendering, or manufacturing exports", () => {
   const plain = inspectSvg(design, "badge");
   for (const declaration of [
